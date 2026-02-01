@@ -1,11 +1,11 @@
 // backend/src/index.ts
 
-import express, { Application, Request, Response } from 'express';
+import express, { Application, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import cookieParser from 'cookie-parser'; // AÑADIR
+import cookieParser from 'cookie-parser';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -23,10 +23,10 @@ const PORT = process.env.PORT || 3001;
 // Security middleware
 app.use(helmet());
 
-// CORS configuration (ACTUALIZAR para permitir credentials)
+// CORS configuration
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true // IMPORTANTE: Permitir cookies
+  credentials: true
 }));
 
 // Rate limiting
@@ -41,10 +41,10 @@ app.use('/api', limiter);
 // Body parser middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser()); // AÑADIR: Parser de cookies
+app.use(cookieParser());
 
 // Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req, res: Response) => {
   res.status(200).json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -58,7 +58,7 @@ app.use('/api/server', serverRoutes);
 app.use('/api/characters', characterRoutes);
 
 // 404 handler
-app.use((req: Request, res: Response) => {
+app.use((req, res: Response) => {
   res.status(404).json({ 
     error: 'Not Found',
     message: 'The requested resource was not found',

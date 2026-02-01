@@ -2,10 +2,10 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
+import { ItemTooltip } from './ItemTooltip';
 import { FaTimes, FaShieldAlt, FaStar, FaTrophy, FaHeart, FaSkull, FaBolt } from 'react-icons/fa';
 import { 
   GiCrossedSwords, 
-  GiHeartBottle, 
   GiMagicSwirl, 
   GiSwordsPower,
   GiHealthPotion,
@@ -14,8 +14,7 @@ import {
   GiBrain,
   GiSparkSpirit,
   GiCheckedShield,
-  GiPunchBlast,
-  GiMagicShield
+  GiPunchBlast
 } from 'react-icons/gi';
 import { charactersAPI } from '../services/api';
 import toast from 'react-hot-toast';
@@ -35,6 +34,7 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
     if (isOpen && characterGuid) {
       fetchCharacterDetails();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, characterGuid]);
 
   const fetchCharacterDetails = async () => {
@@ -42,7 +42,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
       setLoading(true);
       console.log('🔍 [CharacterViewer] Fetching details for GUID:', characterGuid);
       
-      // ✅ USAR API CENTRALIZADA (con interceptor de auto-refresh)
       const response = await charactersAPI.getCharacterDetails(characterGuid);
       
       console.log('✅ [CharacterViewer] Character loaded:', response.data);
@@ -58,7 +57,7 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
         toast.error('Error loading character data');
       }
       
-      onClose(); // Cerrar modal en caso de error
+      onClose();
     } finally {
       setLoading(false);
     }
@@ -66,8 +65,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
 
   if (!isOpen) return null;
 
-  // ==================== DATOS DE CLASES Y RAZAS ====================
-  
   const classData: { [key: number]: { name: string; color: string; icon: string } } = {
     1: { name: 'Warrior', color: 'from-[#C69B6D] to-[#8B7355]', icon: '⚔️' },
     2: { name: 'Paladin', color: 'from-[#F48CBA] to-[#C96A94]', icon: '🛡️' },
@@ -114,10 +111,8 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
           onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-7xl max-h-[95vh] overflow-hidden bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 rounded-2xl border-2 border-wow-gold/40 shadow-2xl shadow-wow-gold/20"
         >
-          {/* DECORATIVE HEADER BORDER */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-wow-gold to-transparent" />
           
-          {/* Close button */}
           <motion.button
             whileHover={{ scale: 1.1, rotate: 90 }}
             whileTap={{ scale: 0.9 }}
@@ -140,10 +135,9 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
           ) : character ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8 overflow-y-auto max-h-[95vh]">
               
-              {/* ==================== LEFT COLUMN ==================== */}
+              {/* LEFT COLUMN */}
               <div className="space-y-6">
                 
-                {/* CHARACTER HEADER */}
                 <motion.div 
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -177,17 +171,14 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                   </p>
                 </motion.div>
 
-                {/* 3D MODEL VIEWER - FIXED */}
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.2 }}
                   className="relative aspect-square bg-gradient-to-br from-dark-800 to-dark-700 rounded-xl border-2 border-dark-600 overflow-hidden shadow-lg"
                 >
-                  {/* WoW Model Viewer (Alternativa funcional) */}
                   <div className="absolute inset-0 flex items-center justify-center bg-dark-800/50">
                     <div className="text-center space-y-4">
-                      {/* Render Race Icon */}
                       <img
                         src={`https://wow.zamimg.com/images/wow/icons/large/race_${raceInfo?.name.toLowerCase().replace(' ', '')}_${character.gender === 0 ? 'male' : 'female'}.jpg`}
                         alt={raceInfo?.name}
@@ -205,14 +196,12 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                     </div>
                   </div>
                   
-                  {/* Decorative corners */}
                   <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-wow-gold/50"></div>
                   <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-wow-gold/50"></div>
                   <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-wow-gold/50"></div>
                   <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-wow-gold/50"></div>
                 </motion.div>
 
-                {/* QUICK STATS - WoW Style */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -240,10 +229,9 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                 </motion.div>
               </div>
 
-              {/* ==================== RIGHT COLUMN - TABS ==================== */}
+              {/* RIGHT COLUMN */}
               <div className="space-y-4">
                 
-                {/* TAB BUTTONS - WoW Style */}
                 <div className="flex space-x-2 border-b-2 border-dark-600">
                   {(['stats', 'equipment', 'achievements'] as const).map((tab) => (
                     <motion.button
@@ -269,10 +257,9 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                   ))}
                 </div>
 
-                {/* TAB CONTENT */}
                 <div className="space-y-4 max-h-[650px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-dark-800">
                   {activeTab === 'stats' && character.stats && (
-                    <StatsTab stats={character.stats} character={character} />
+                    <StatsTab stats={character.stats} />
                   )}
                   {activeTab === 'equipment' && (
                     <EquipmentTab equipment={character.equipment || []} />
@@ -301,7 +288,8 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
   );
 }
 
-// ==================== QUICK STAT CARD COMPONENT ====================
+// ==================== COMPONENTS ====================
+
 function QuickStatCard({ 
   icon, 
   label, 
@@ -322,15 +310,18 @@ function QuickStatCard({
         {icon}
       </div>
       <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-2xl font-bold text-${color === 'wow-gold' ? 'wow-gold' : color === 'red' ? 'red-400' : 'wow-ice'}`}>
+      <p className={`text-2xl font-bold ${
+        color === 'wow-gold' ? 'text-wow-gold' : 
+        color === 'red' ? 'text-red-400' : 
+        'text-wow-ice'
+      }`}>
         {value.toLocaleString()}
       </p>
     </motion.div>
   );
 }
 
-// ==================== STATS TAB - ENHANCED WITH ICONS ====================
-function StatsTab({ stats, character }: { stats: any; character: any }) {
+function StatsTab({ stats }: { stats: any }) {
   const statGroups = [
     {
       title: 'Health & Power',
@@ -400,7 +391,9 @@ function StatsTab({ stats, character }: { stats: any; character: any }) {
                   {stat.icon}
                   <span className="text-sm text-gray-400">{stat.label}</span>
                 </div>
-                <span className="font-bold text-white text-lg">{stat.value.toLocaleString()}</span>
+                <span className="font-bold text-white text-lg">
+                  {typeof stat.value === 'string' ? stat.value : stat.value.toLocaleString()}
+                </span>
               </motion.div>
             ))}
           </div>
@@ -410,7 +403,6 @@ function StatsTab({ stats, character }: { stats: any; character: any }) {
   );
 }
 
-// ==================== EQUIPMENT TAB ====================
 function EquipmentTab({ equipment }: { equipment: any[] }) {
   const slots: { [key: number]: string } = {
     0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
@@ -423,6 +415,7 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
     <div className="grid grid-cols-1 gap-2">
       {Object.entries(slots).map(([slotId, slotName]) => {
         const item = equipment.find((eq) => eq.slot === parseInt(slotId));
+        
         return (
           <motion.div
             key={slotId}
@@ -431,9 +424,12 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
             whileHover={{ scale: 1.02, x: 4 }}
             className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/50 transition-all"
           >
-            <span className="text-sm font-medium text-gray-400 min-w-[100px]">{slotName}</span>
+            <span className="text-sm font-medium text-gray-400 min-w-[100px]">
+              {slotName}
+            </span>
+            
             {item ? (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <img
                   src={`https://wow.zamimg.com/images/wow/icons/small/${item.entry}.jpg`}
                   alt="Item"
@@ -442,7 +438,24 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
                     e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/small/inv_misc_questionmark.jpg';
                   }}
                 />
-                <span className="text-sm text-wow-gold font-medium">Item {item.entry}</span>
+                
+                <ItemTooltip
+                  itemId={item.entry}
+                  enchantId={parseEnchant(item.enchantmentsParsed)}
+                  gems={parseGems(item.enchantmentsParsed)}
+                  className="text-sm font-medium text-wow-gold hover:text-wow-ice transition-colors"
+                >
+                  Item {item.entry}
+                </ItemTooltip>
+                
+                <div className="flex items-center space-x-1">
+                  {parseGems(item.enchantmentsParsed).map((gemId, idx) => (
+                    <GemIndicator key={idx} gemId={gemId} />
+                  ))}
+                  {parseEnchant(item.enchantmentsParsed) && (
+                    <EnchantIndicator />
+                  )}
+                </div>
               </div>
             ) : (
               <span className="text-xs text-gray-600 italic">Empty</span>
@@ -454,7 +467,30 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
   );
 }
 
-// ==================== ACHIEVEMENTS TAB ====================
+function parseEnchant(enchantmentsParsed: any): number | undefined {
+  return enchantmentsParsed?.permanent;
+}
+
+function parseGems(enchantmentsParsed: any): number[] {
+  return enchantmentsParsed?.gems || [];
+}
+
+function GemIndicator({ gemId }: { gemId: number }) {
+  return (
+    <ItemTooltip itemId={gemId} className="inline-block">
+      <div className="w-4 h-4 rounded-full border border-purple-500 bg-purple-900/50 hover:bg-purple-800/70 transition-colors cursor-pointer" />
+    </ItemTooltip>
+  );
+}
+
+function EnchantIndicator() {
+  return (
+    <div className="px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
+      <FaBolt className="inline w-3 h-3" />
+    </div>
+  );
+}
+
 function AchievementsTab({ achievements }: { achievements: any[] }) {
   if (achievements.length === 0) {
     return (

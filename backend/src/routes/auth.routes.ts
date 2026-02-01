@@ -130,8 +130,13 @@ router.post('/login', validate(loginValidation), async (req: Request, res: Respo
  */
 router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   try {
-    // Intentar obtener refresh token de cookie (preferido) o body (fallback)
-    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+    // CRÍTICO: Obtener de cookie primero
+    const refreshToken = req.cookies?.refreshToken;
+
+    console.log('🔄 [AUTH] Refresh attempt:', {
+      hasCookie: !!req.cookies?.refreshToken,
+      cookies: Object.keys(req.cookies || {})
+    });
 
     if (!refreshToken) {
       res.status(401).json({ 
@@ -141,12 +146,9 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    console.log('🔄 [AUTH ROUTES] Token refresh attempt');
-
     const result = await authService.refreshAccessToken(refreshToken);
 
     if (!result.success) {
-      // Limpiar cookie si el token es inválido
       res.clearCookie('refreshToken', { path: '/api/auth' });
       res.status(401).json(result);
       return;
@@ -155,7 +157,6 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
     res.status(200).json({
       success: true,
       accessToken: result.accessToken,
-      token: result.accessToken // Compatibilidad backward
     });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Refresh error:', error);

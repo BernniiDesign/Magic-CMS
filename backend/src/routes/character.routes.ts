@@ -1,46 +1,43 @@
+// backend/src/routes/character.routes.ts
+
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest, optionalAuth } from '../middleware/auth.middleware';
 import characterService from '../services/character.service';
+import itemService from '../services/item.service';
 
 const router = Router();
 
 // Get characters for an account
-router.get('/account/:accountId', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/account/:accountId', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const accountId = parseInt(req.params.accountId, 10);
     const userId = req.user?.id;
 
-    console.log('📝 [CHARACTERS ROUTE] Petición recibida');
-    console.log('📝 [CHARACTERS ROUTE] User ID del token:', userId);
-    console.log('📝 [CHARACTERS ROUTE] Account ID solicitado:', accountId);
-
     if (!userId) {
-      return res.status(401).json({
+      res.status(401).json({
         success: false,
         message: 'User not authenticated'
       });
+      return;
     }
 
     if (isNaN(accountId)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'Invalid account ID'
       });
+      return;
     }
 
-    // Verificación de seguridad
     if (Number(userId) !== Number(accountId)) {
-      console.error('❌ [CHARACTERS ROUTE] Acceso denegado');
-      return res.status(403).json({
+      res.status(403).json({
         success: false,
         message: 'You can only view your own characters'
       });
+      return;
     }
 
-    console.log('✅ [CHARACTERS ROUTE] Acceso permitido, obteniendo personajes...');
     const characters = await characterService.getAccountCharacters(accountId);
-    
-    console.log('✅ [CHARACTERS ROUTE] Personajes obtenidos:', characters.length);
     
     res.json({
       success: true,
@@ -56,35 +53,56 @@ router.get('/account/:accountId', authenticateToken, async (req: AuthRequest, re
 });
 
 // Get character details (stats, equipment, achievements)
-router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const guid = parseInt(req.params.guid, 10);
     const userId = req.user?.id;
 
     if (!userId || isNaN(guid)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'Invalid request'
       });
+      return;
     }
 
-    // Verificar que el personaje pertenece al usuario
     const isOwner = await characterService.verifyCharacterOwnership(guid, userId);
 
     if (!isOwner) {
-      return res.status(403).json({
+      res.status(403).json({
         success: false,
         message: 'You can only view your own characters'
       });
+      return;
     }
 
     const character = await characterService.getCharacterDetails(guid);
 
     if (!character) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: 'Character not found'
       });
+      return;
+    }
+
+    // Enriquecer equipo con datos de encantamientos parseados
+    if (character.equipment) {
+      character.equipment = await Promise.all(
+        character.equipment.map(async (item: any) => {
+          const itemInstance = await itemService.getItemInstance(item.item);
+          if (itemInstance) {
+            return {
+              ...item,
+              entry: itemInstance.itemEntry,
+              enchantments: itemInstance.enchantments,
+              enchantmentsParsed: itemService.parseEnchantments(itemInstance.enchantments),
+              randomProperty: itemInstance.randomPropertyId
+            };
+          }
+          return item;
+        })
+      );
     }
 
     res.json({
@@ -101,24 +119,26 @@ router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Re
 });
 
 // Get a specific character (basic info, public)
-router.get('/:guid', optionalAuth, async (req: AuthRequest, res: Response) => {
+router.get('/:guid', optionalAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const guid = parseInt(req.params.guid, 10);
 
     if (isNaN(guid)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         message: 'Invalid request'
       });
+      return;
     }
 
     const character = await characterService.getCharacterDetails(guid);
 
     if (!character) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         message: 'Character not found'
       });
+      return;
     }
 
     res.json({
@@ -135,10 +155,9 @@ router.get('/:guid', optionalAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // Get top characters (public)
-router.get('/top', async (req: AuthRequest, res: Response) => {
+router.get('/top', async (_req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const limit = parseInt(req.query.limit as string) || 100;
-    const characters = await characterService.getTopCharacters(limit);
+    const characters = await characterService.getTopCharacters(100);
 
     res.json({
       success: true,

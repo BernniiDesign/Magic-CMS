@@ -5,14 +5,12 @@ import { useAuthStore } from '../store/authStore';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3006/api';
 
-// ==================== AXIOS INSTANCE ====================
-
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // Necesario para cookies httpOnly
+  withCredentials: true, // CRÍTICO: Enviar cookies
 });
 
 // ==================== REQUEST INTERCEPTOR ====================
@@ -22,24 +20,23 @@ api.interceptors.request.use(
     const token = useAuthStore.getState().accessToken;
     
     console.log('📤 [API] Request:', config.method?.toUpperCase(), config.url);
-    console.log('📤 [API] Token presente:', !!token);
     
     if (token) {
-      // CRÍTICO: Validar que el token tenga formato JWT antes de enviarlo
       if (token.split('.').length === 3) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log('✅ [API] Token agregado al header');
+        console.log('✅ [API] Token agregado');
       } else {
-        console.error('❌ [API] Token malformado detectado, no se envía:', token.substring(0, 20) + '...');
-        // Limpiar el token corrupto del store
+        console.error('❌ [API] Token malformado');
         useAuthStore.getState().logout();
       }
+    } else {
+      console.warn('⚠️ [API] No hay token disponible');
     }
     
     return config;
   },
   (error) => {
-    console.error('❌ [API] Request interceptor error:', error);
+    console.error('❌ [API] Request error:', error);
     return Promise.reject(error);
   }
 );
@@ -68,87 +65,97 @@ api.interceptors.response.use(
   async (error: AxiosError<any>) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    console.log('❌ [API] Response error:', error.response?.status, error.response?.data);
+    console.log('❌ [API] Response error:', {
+      status: error.response?.status,
+      url: originalRequest?.url,
+      message: error.response?.data?.message
+    });
 
-    // Si el error NO es 401, o ya reintentamos, rechazar inmediatamente
-    if (error.response?.status !== 401 || originalRequest._retry) {
+    // Si no es 401, rechazar inmediatamente
+    if (error.response?.status !== 401) {
       return Promise.reject(error);
     }
 
-    // Si el error es "TOKEN_EXPIRED", intentar refresh
-    if (error.response?.data?.message === 'TOKEN_EXPIRED' || 
-        error.response?.data?.message === 'Invalid or expired token') {
-      
-      // Si ya estamos refrescando, poner en cola
-      if (isRefreshing) {
-        console.log('⏳ [API] Refresh en progreso, agregando a cola');
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        })
-          .then((token) => {
-            if (originalRequest.headers && token) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-            }
-            return api(originalRequest);
-          })
-          .catch((err) => {
-            return Promise.reject(err);
-          });
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      console.log('🔄 [API] Intentando refresh token...');
-
-      try {
-        // Llamar al endpoint de refresh
-        const response = await api.post('/auth/refresh', {}, {
-          _retry: true, // Evitar loop infinito
-        } as any);
-
-        const { accessToken } = response.data;
-
-        console.log('✅ [API] Token refrescado exitosamente');
-        console.log('✅ [API] Nuevo token válido:', accessToken.split('.').length === 3);
-
-        // CRÍTICO: Validar que el nuevo token sea válido
-        if (!accessToken || accessToken.split('.').length !== 3) {
-          throw new Error('Refresh token inválido recibido del servidor');
-        }
-
-        // Actualizar el store
-        useAuthStore.getState().updateAccessToken(accessToken);
-
-        // Actualizar el header de la request original
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        }
-
-        // Procesar la cola
-        processQueue(null, accessToken);
-
-        // Reintentar la request original
-        return api(originalRequest);
-
-      } catch (refreshError: any) {
-        console.error('❌ [API] Refresh token falló:', refreshError);
-        
-        processQueue(refreshError, null);
-        
-        // Limpiar autenticación
-        useAuthStore.getState().logout();
-        
-        // Redirigir a login
-        window.location.href = '/login';
-        
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
+    // Si ya reintentamos, rechazar
+    if (originalRequest._retry) {
+      console.error('❌ [API] Refresh ya intentado, redirigiendo a login');
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
+    // Si estamos en login/register, no intentar refresh
+    if (originalRequest.url?.includes('/auth/login') || 
+        originalRequest.url?.includes('/auth/register')) {
+      return Promise.reject(error);
+    }
+
+    // Si ya estamos refrescando, agregar a cola
+    if (isRefreshing) {
+      console.log('⏳ [API] Refresh en progreso, agregando a cola');
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then((token) => {
+          if (originalRequest.headers && token) {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+          }
+          return api(originalRequest);
+        })
+        .catch((err) => {
+          return Promise.reject(err);
+        });
+    }
+
+    originalRequest._retry = true;
+    isRefreshing = true;
+
+    console.log('🔄 [API] Intentando refresh token...');
+
+    try {
+      // CRÍTICO: Usar endpoint correcto sin body
+      const response = await api.post('/auth/refresh', undefined, {
+        // Evitar loop infinito
+        headers: {
+          ...originalRequest.headers,
+        },
+        _retry: true,
+      } as any);
+
+      const { accessToken } = response.data;
+
+      console.log('✅ [API] Token refrescado exitosamente');
+
+      if (!accessToken || accessToken.split('.').length !== 3) {
+        throw new Error('Invalid refresh token received');
+      }
+
+      // Actualizar store
+      useAuthStore.getState().updateAccessToken(accessToken);
+
+      // Actualizar header de request original
+      if (originalRequest.headers) {
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+      }
+
+      // Procesar cola
+      processQueue(null, accessToken);
+
+      // Reintentar request original
+      return api(originalRequest);
+
+    } catch (refreshError: any) {
+      console.error('❌ [API] Refresh token falló:', refreshError);
+      
+      processQueue(refreshError, null);
+      useAuthStore.getState().logout();
+      
+      window.location.href = '/login';
+      
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
 
