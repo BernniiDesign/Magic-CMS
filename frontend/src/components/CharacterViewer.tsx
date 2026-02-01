@@ -431,9 +431,9 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
             
             {item ? (
               <div className="flex items-center space-x-3 flex-1">
-                {/* Icono con borde de calidad */}
+                {/* ✅ Icono simple: solo necesita icon, name, quality */}
                 <ItemIcon
-                  icon={item.icon} // <- Campo que viene del backend
+                  icon={item.icon}
                   name={item.name}
                   quality={item.quality}
                   size="small"
@@ -441,7 +441,7 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
                 
                 {/* Nombre con tooltip */}
                 <ItemTooltip
-                  itemId={item.entry}
+                  itemId={item.itemEntry}
                   enchantId={parseEnchant(item.enchantmentsParsed)}
                   gems={parseGems(item.enchantmentsParsed)}
                   className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
@@ -449,14 +449,12 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
                   {item.name}
                 </ItemTooltip>
                 
-                {/* Indicadores de gemas/encantamientos */}
+                {/* Gemas/encantamientos */}
                 <div className="flex items-center space-x-1 flex-shrink-0">
                   {parseGems(item.enchantmentsParsed).map((gemId, idx) => (
                     <GemIndicator key={idx} gemId={gemId} />
                   ))}
-                  {parseEnchant(item.enchantmentsParsed) && (
-                    <EnchantIndicator />
-                  )}
+                  {parseEnchant(item.enchantmentsParsed) && <EnchantIndicator />}
                 </div>
               </div>
             ) : (
@@ -468,7 +466,6 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
     </div>
   );
 }
-
 // Helper para color de texto según calidad
 function getQualityTextClass(quality: number): string {
   const classes: Record<number, string> = {

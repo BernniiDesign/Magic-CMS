@@ -1,5 +1,4 @@
 import net from 'net';
-import crypto from 'crypto';
 
 interface RAConfig {
   host: string;
