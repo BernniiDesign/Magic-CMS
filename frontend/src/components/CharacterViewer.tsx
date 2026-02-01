@@ -18,6 +18,7 @@ import {
 } from 'react-icons/gi';
 import { charactersAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import { ItemIcon } from './ItemIcon';
 
 interface CharacterViewerProps {
   isOpen: boolean;
@@ -429,26 +430,27 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
             </span>
             
             {item ? (
-              <div className="flex items-center space-x-3">
-                <img
-                  src={`https://wow.zamimg.com/images/wow/icons/small/${item.entry}.jpg`}
-                  alt="Item"
-                  className="w-10 h-10 rounded border-2 border-wow-gold/50 shadow-lg"
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/small/inv_misc_questionmark.jpg';
-                  }}
+              <div className="flex items-center space-x-3 flex-1">
+                {/* Icono con borde de calidad */}
+                <ItemIcon
+                  icon={item.icon} // <- Campo que viene del backend
+                  name={item.name}
+                  quality={item.quality}
+                  size="small"
                 />
                 
+                {/* Nombre con tooltip */}
                 <ItemTooltip
                   itemId={item.entry}
                   enchantId={parseEnchant(item.enchantmentsParsed)}
                   gems={parseGems(item.enchantmentsParsed)}
-                  className="text-sm font-medium text-wow-gold hover:text-wow-ice transition-colors"
+                  className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
                 >
-                  Item {item.entry}
+                  {item.name}
                 </ItemTooltip>
                 
-                <div className="flex items-center space-x-1">
+                {/* Indicadores de gemas/encantamientos */}
+                <div className="flex items-center space-x-1 flex-shrink-0">
                   {parseGems(item.enchantmentsParsed).map((gemId, idx) => (
                     <GemIndicator key={idx} gemId={gemId} />
                   ))}
@@ -465,6 +467,21 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
       })}
     </div>
   );
+}
+
+// Helper para color de texto según calidad
+function getQualityTextClass(quality: number): string {
+  const classes: Record<number, string> = {
+    0: 'text-gray-500',      // Poor
+    1: 'text-white',         // Common
+    2: 'text-green-400',     // Uncommon
+    3: 'text-blue-400',      // Rare
+    4: 'text-purple-400',    // Epic
+    5: 'text-orange-400',    // Legendary
+    6: 'text-yellow-400',    // Artifact
+    7: 'text-cyan-400',      // Heirloom
+  };
+  return classes[quality] || 'text-white';
 }
 
 function parseEnchant(enchantmentsParsed: any): number | undefined {

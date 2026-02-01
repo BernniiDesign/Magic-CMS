@@ -81,3 +81,36 @@
   );
   background-size: 1000px 100%;
 }
+
+/* Bordes de calidad WoW */
+.quality-poor {
+  filter: grayscale(0.8);
+}
+
+.quality-common {
+  filter: brightness(1.1);
+}
+
+.quality-uncommon {
+  filter: hue-rotate(120deg) saturate(1.2);
+}
+
+.quality-rare {
+  filter: hue-rotate(240deg) saturate(1.3);
+}
+
+.quality-epic {
+  filter: hue-rotate(280deg) saturate(1.4);
+}
+
+.quality-legendary {
+  filter: hue-rotate(30deg) saturate(1.5);
+}
+
+.quality-artifact {
+  filter: hue-rotate(50deg) saturate(1.6) brightness(1.1);
+}
+
+.quality-heirloom {
+  filter: hue-rotate(180deg) saturate(1.2);
+}

@@ -135,23 +135,35 @@ class CharacterService {
   }
 
   // Obtener equipo del personaje
-  async getCharacterEquipment(guid: number): Promise<CharacterEquipment[]> {
-    try {
-      const [equipment] = await charactersDB.query<RowDataPacket[]>(
-        `SELECT ci.slot, ci.item, ii.itemEntry as entry, ii.enchantments
-         FROM character_inventory ci
-         JOIN item_instance ii ON ci.item = ii.guid
-         WHERE ci.guid = ? AND ci.slot < 19
-         ORDER BY ci.slot`,
-        [guid]
-      );
+async getCharacterEquipment(guid: number): Promise<CharacterEquipment[]> {
+  try {
+    const [equipment] = await charactersDB.query<RowDataPacket[]>(
+      `SELECT 
+        ci.slot, 
+        ci.item, 
+        ii.itemEntry as entry, 
+        ii.enchantments,
+        it.name,
+        it.Quality as quality,
+        COALESCE(ic.InventoryIcon_1, 'inv_misc_questionmark.jpg') as icon
+       FROM character_inventory ci
+       JOIN item_instance ii ON ci.item = ii.guid
+       JOIN world.item_template it ON ii.itemEntry = it.entry
+       LEFT JOIN characters.item_icon ic ON it.entry = ic.ID
+       WHERE ci.guid = ? AND ci.slot < 19
+       ORDER BY ci.slot`,
+      [guid]
+    );
 
-      return equipment as CharacterEquipment[];
-    } catch (error) {
-      console.error('❌ [CHARACTERS] Error obteniendo equipo:', error);
-      return [];
-    }
+    // ⚠️ LOGGING TEMPORAL - QUITAR EN PRODUCCIÓN
+    console.log('📦 [CHARACTER SERVICE] Equipment data:', JSON.stringify(equipment, null, 2));
+    
+    return equipment as CharacterEquipment[];
+  } catch (error) {
+    console.error('❌ [CHARACTERS] Error obteniendo equipo:', error);
+    return [];
   }
+}
 
   // Obtener logros del personaje
   async getCharacterAchievements(guid: number): Promise<Achievement[]> {
