@@ -1,3 +1,5 @@
+// backend/src/routes/auth.routes.ts
+
 import { Router, Request, Response } from 'express';
 import { body } from 'express-validator';
 import authService from '../services/auth.service';
@@ -6,7 +8,8 @@ import { authenticateToken, AuthRequest } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// Validation rules
+// ==================== VALIDATION RULES ====================
+
 const registerValidation = [
   body('username')
     .trim()
@@ -34,6 +37,14 @@ const loginValidation = [
     .withMessage('Password is required')
 ];
 
+const refreshTokenValidation = [
+  body('refreshToken')
+    .notEmpty()
+    .withMessage('Refresh token is required')
+];
+
+// ==================== ROUTES ====================
+
 /**
  * @route   POST /api/auth/register
  * @desc    Register a new account
@@ -52,7 +63,7 @@ router.post('/register', validate(registerValidation), async (req: Request, res:
 
     res.status(201).json(result);
   } catch (error) {
-    console.error('Register route error:', error);
+    console.error('❌ [AUTH ROUTES] Register error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 
@@ -68,17 +79,148 @@ router.post('/register', validate(registerValidation), async (req: Request, res:
 router.post('/login', validate(loginValidation), async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password } = req.body;
+    
+    // Obtener IP real (considerando reverse proxy)
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() 
+                      || req.headers['x-real-ip'] as string
+                      || req.socket.remoteAddress 
+                      || 'unknown';
 
-    const result = await authService.login({ username, password });
+    const userAgent = req.headers['user-agent'] || 'unknown';
+
+    console.log('🔐 [AUTH ROUTES] Login attempt:', { username, ipAddress, userAgent });
+
+    const result = await authService.login(username, password, ipAddress);
 
     if (!result.success) {
       res.status(401).json(result);
       return;
     }
 
-    res.status(200).json(result);
+    // Configurar refresh token en httpOnly cookie (seguro)
+    res.cookie('refreshToken', result.refreshToken, {
+      httpOnly: true,      // No accesible desde JavaScript
+      secure: process.env.NODE_ENV === 'production', // Solo HTTPS en producción
+      sameSite: 'strict',  // Protección CSRF
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+      path: '/api/auth'    // Solo disponible en rutas de auth
+    });
+
+    // Retornar solo access token (refresh token va en cookie)
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      token: result.accessToken, // Compatibilidad backward
+      accessToken: result.accessToken,
+      user: result.user
+    });
   } catch (error) {
-    console.error('Login route error:', error);
+    console.error('❌ [AUTH ROUTES] Login error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/refresh
+ * @desc    Refresh access token using refresh token
+ * @access  Public (requires valid refresh token in cookie or body)
+ */
+router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Intentar obtener refresh token de cookie (preferido) o body (fallback)
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+
+    if (!refreshToken) {
+      res.status(401).json({ 
+        success: false, 
+        message: 'Refresh token not provided' 
+      });
+      return;
+    }
+
+    console.log('🔄 [AUTH ROUTES] Token refresh attempt');
+
+    const result = await authService.refreshAccessToken(refreshToken);
+
+    if (!result.success) {
+      // Limpiar cookie si el token es inválido
+      res.clearCookie('refreshToken', { path: '/api/auth' });
+      res.status(401).json(result);
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      accessToken: result.accessToken,
+      token: result.accessToken // Compatibilidad backward
+    });
+  } catch (error) {
+    console.error('❌ [AUTH ROUTES] Refresh error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/logout
+ * @desc    Logout (revoke refresh token)
+ * @access  Private
+ */
+router.post('/logout', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
+
+    if (refreshToken) {
+      await authService.logout(refreshToken);
+    }
+
+    // Limpiar cookie
+    res.clearCookie('refreshToken', { path: '/api/auth' });
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Logged out successfully' 
+    });
+  } catch (error) {
+    console.error('❌ [AUTH ROUTES] Logout error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/logout-all
+ * @desc    Logout from all devices (revoke all refresh tokens)
+ * @access  Private
+ */
+router.post('/logout-all', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ 
+        success: false, 
+        message: 'Not authenticated' 
+      });
+      return;
+    }
+
+    await authService.logoutAll(req.user.id);
+
+    // Limpiar cookie
+    res.clearCookie('refreshToken', { path: '/api/auth' });
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Logged out from all devices' 
+    });
+  } catch (error) {
+    console.error('❌ [AUTH ROUTES] Logout all error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 
@@ -101,7 +243,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Pr
       return;
     }
 
-    const account = await authService.getAccount(req.user.accountId);
+    const account = await authService.getAccount(req.user.id);
 
     if (!account) {
       res.status(404).json({ 
@@ -116,7 +258,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Pr
       account 
     });
   } catch (error) {
-    console.error('Get me route error:', error);
+    console.error('❌ [AUTH ROUTES] Get me error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 
@@ -126,7 +268,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Pr
 
 /**
  * @route   POST /api/auth/verify
- * @desc    Verify JWT token
+ * @desc    Verify JWT token (legacy endpoint)
  * @access  Public
  */
 router.post('/verify', async (req: Request, res: Response): Promise<void> => {
@@ -156,7 +298,7 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
       user: decoded 
     });
   } catch (error) {
-    console.error('Verify route error:', error);
+    console.error('❌ [AUTH ROUTES] Verify error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 

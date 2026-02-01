@@ -1,8 +1,11 @@
+// backend/src/index.ts
+
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser'; // AÑADIR
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -12,7 +15,6 @@ import characterRoutes from './routes/character.routes';
 // Middleware
 import { errorHandler } from './middleware/error.middleware';
 
-// Load environment variables
 dotenv.config();
 
 const app: Application = express();
@@ -21,10 +23,10 @@ const PORT = process.env.PORT || 3001;
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
+// CORS configuration (ACTUALIZAR para permitir credentials)
 app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true
+  credentials: true // IMPORTANTE: Permitir cookies
 }));
 
 // Rate limiting
@@ -39,6 +41,7 @@ app.use('/api', limiter);
 // Body parser middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // AÑADIR: Parser de cookies
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
@@ -63,7 +66,7 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Error handling middleware (must be last)
+// Error handling middleware
 app.use(errorHandler);
 
 // Start server

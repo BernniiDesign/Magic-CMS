@@ -1,3 +1,5 @@
+// frontend/src/store/authStore.ts
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -9,55 +11,61 @@ interface User {
 
 interface AuthState {
   user: User | null;
-  token: string | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
-  setAuth: (user: User, token: string) => void;
+  isRefreshing: boolean;
+  
+  // Actions
+  setAuth: (user: User, accessToken: string) => void;
+  updateAccessToken: (accessToken: string) => void;
   logout: () => void;
+  setRefreshing: (isRefreshing: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      token: null,
+      accessToken: null,
       isAuthenticated: false,
-      setAuth: (user, token) => {
-        console.log('🔐 [AUTH STORE] Guardando autenticación:', { user, tokenLength: token.length });
-        
-        // Guardar en localStorage
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        // Actualizar estado
-        set({
-          user,
-          token,
-          isAuthenticated: true,
+      isRefreshing: false,
+
+      setAuth: (user, accessToken) => {
+        console.log('🔐 [AUTH STORE] Guardando autenticación:', { 
+          user, 
+          tokenLength: accessToken.length 
         });
         
-        console.log('✅ [AUTH STORE] Token guardado en localStorage');
+        set({
+          user,
+          accessToken,
+          isAuthenticated: true,
+        });
       },
+
+      updateAccessToken: (accessToken) => {
+        console.log('🔄 [AUTH STORE] Actualizando access token');
+        set({ accessToken });
+      },
+
+      setRefreshing: (isRefreshing) => {
+        set({ isRefreshing });
+      },
+
       logout: () => {
         console.log('🚪 [AUTH STORE] Cerrando sesión');
-        
-        // Limpiar localStorage
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        
-        // Limpiar estado
         set({
           user: null,
-          token: null,
+          accessToken: null,
           isAuthenticated: false,
         });
       },
     }),
     {
       name: 'auth-storage',
-      // Asegurar que se sincronice con localStorage
       partialize: (state) => ({
         user: state.user,
-        token: state.token,
+        accessToken: state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

@@ -1,8 +1,24 @@
+// frontend/src/components/CharacterViewer.tsx
+
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { FaTimes, FaShieldAlt, FaStar, FaTrophy, FaHeart } from 'react-icons/fa';
-import { GiCrossedSwords, GiHeartBottle, GiMagicSwirl, GiSwordsPower } from 'react-icons/gi';
-import axios from 'axios';
+import { FaTimes, FaShieldAlt, FaStar, FaTrophy, FaHeart, FaSkull, FaBolt } from 'react-icons/fa';
+import { 
+  GiCrossedSwords, 
+  GiHeartBottle, 
+  GiMagicSwirl, 
+  GiSwordsPower,
+  GiHealthPotion,
+  GiMuscleUp,
+  GiRunningNinja,
+  GiBrain,
+  GiSparkSpirit,
+  GiCheckedShield,
+  GiPunchBlast,
+  GiMagicShield
+} from 'react-icons/gi';
+import { charactersAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
 interface CharacterViewerProps {
   isOpen: boolean;
@@ -24,16 +40,25 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
   const fetchCharacterDetails = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `http://localhost:3006/api/characters/${characterGuid}/details`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      console.log('🔍 [CharacterViewer] Fetching details for GUID:', characterGuid);
+      
+      // ✅ USAR API CENTRALIZADA (con interceptor de auto-refresh)
+      const response = await charactersAPI.getCharacterDetails(characterGuid);
+      
+      console.log('✅ [CharacterViewer] Character loaded:', response.data);
       setCharacter(response.data.character);
-    } catch (error) {
-      console.error('Error fetching character:', error);
+    } catch (error: any) {
+      console.error('❌ [CharacterViewer] Error fetching character:', error);
+      
+      if (error.response?.status === 403) {
+        toast.error('You do not have permission to view this character');
+      } else if (error.response?.status === 401) {
+        toast.error('Session expired. Please login again.');
+      } else {
+        toast.error('Error loading character data');
+      }
+      
+      onClose(); // Cerrar modal en caso de error
     } finally {
       setLoading(false);
     }
@@ -41,30 +66,32 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
 
   if (!isOpen) return null;
 
-  const classData: { [key: number]: { name: string; color: string } } = {
-    1: { name: 'Warrior', color: 'from-[#C69B6D] to-[#8B7355]' },
-    2: { name: 'Paladin', color: 'from-[#F48CBA] to-[#C96A94]' },
-    3: { name: 'Hunter', color: 'from-[#AAD372] to-[#86A356]' },
-    4: { name: 'Rogue', color: 'from-[#FFF468] to-[#CCC350]' },
-    5: { name: 'Priest', color: 'from-[#FFFFFF] to-[#CCCCCC]' },
-    6: { name: 'Death Knight', color: 'from-[#C41E3A] to-[#9A1829]' },
-    7: { name: 'Shaman', color: 'from-[#0070DD] to-[#005AAA]' },
-    8: { name: 'Mage', color: 'from-[#3FC7EB] to-[#2E9AC2]' },
-    9: { name: 'Warlock', color: 'from-[#8788EE] to-[#6465BC]' },
-    11: { name: 'Druid', color: 'from-[#FF7C0A] to-[#CC6308]' },
+  // ==================== DATOS DE CLASES Y RAZAS ====================
+  
+  const classData: { [key: number]: { name: string; color: string; icon: string } } = {
+    1: { name: 'Warrior', color: 'from-[#C69B6D] to-[#8B7355]', icon: '⚔️' },
+    2: { name: 'Paladin', color: 'from-[#F48CBA] to-[#C96A94]', icon: '🛡️' },
+    3: { name: 'Hunter', color: 'from-[#AAD372] to-[#86A356]', icon: '🏹' },
+    4: { name: 'Rogue', color: 'from-[#FFF468] to-[#CCC350]', icon: '🗡️' },
+    5: { name: 'Priest', color: 'from-[#FFFFFF] to-[#CCCCCC]', icon: '✨' },
+    6: { name: 'Death Knight', color: 'from-[#C41E3A] to-[#9A1829]', icon: '💀' },
+    7: { name: 'Shaman', color: 'from-[#0070DD] to-[#005AAA]', icon: '⚡' },
+    8: { name: 'Mage', color: 'from-[#3FC7EB] to-[#2E9AC2]', icon: '🔮' },
+    9: { name: 'Warlock', color: 'from-[#8788EE] to-[#6465BC]', icon: '🔥' },
+    11: { name: 'Druid', color: 'from-[#FF7C0A] to-[#CC6308]', icon: '🌿' },
   };
 
-  const raceData: { [key: number]: { name: string } } = {
-    1: { name: 'Human' }, 2: { name: 'Orc' }, 3: { name: 'Dwarf' },
-    4: { name: 'Night Elf' }, 5: { name: 'Undead' }, 6: { name: 'Tauren' },
-    7: { name: 'Gnome' }, 8: { name: 'Troll' }, 10: { name: 'Blood Elf' },
-    11: { name: 'Draenei' },
-  };
-
-  const getModelUrl = () => {
-    if (!character) return '';
-    // WoW Model Viewer URL format
-    return `https://wow.zamimg.com/modelviewer/live/webthumbs/npc/130/25474.png`;
+  const raceData: { [key: number]: { name: string; faction: string } } = {
+    1: { name: 'Human', faction: 'Alliance' },
+    2: { name: 'Orc', faction: 'Horde' },
+    3: { name: 'Dwarf', faction: 'Alliance' },
+    4: { name: 'Night Elf', faction: 'Alliance' },
+    5: { name: 'Undead', faction: 'Horde' },
+    6: { name: 'Tauren', faction: 'Horde' },
+    7: { name: 'Gnome', faction: 'Alliance' },
+    8: { name: 'Troll', faction: 'Horde' },
+    10: { name: 'Blood Elf', faction: 'Horde' },
+    11: { name: 'Draenei', faction: 'Alliance' },
   };
 
   const classInfo = character ? classData[character.class] : null;
@@ -76,99 +103,174 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
+          initial={{ scale: 0.95, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.95, opacity: 0, y: 20 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden bg-gradient-to-br from-dark-900 to-dark-800 rounded-2xl border-2 border-wow-gold/30 shadow-2xl"
+          className="relative w-full max-w-7xl max-h-[95vh] overflow-hidden bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 rounded-2xl border-2 border-wow-gold/40 shadow-2xl shadow-wow-gold/20"
         >
+          {/* DECORATIVE HEADER BORDER */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-wow-gold to-transparent" />
+          
           {/* Close button */}
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1, rotate: 90 }}
+            whileTap={{ scale: 0.9 }}
             onClick={onClose}
-            className="absolute top-4 right-4 z-10 p-2 bg-dark-700 hover:bg-dark-600 rounded-lg transition-colors"
+            className="absolute top-4 right-4 z-10 p-3 bg-dark-700/80 hover:bg-red-600/80 rounded-lg transition-all border border-dark-600 hover:border-red-500"
           >
             <FaTimes className="text-xl text-gray-400 hover:text-white" />
-          </button>
+          </motion.button>
 
           {loading ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-wow-gold"></div>
-            </div>
-          ) : character ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 overflow-y-auto max-h-[90vh]">
-              {/* Left: 3D Model */}
-              <div className="space-y-4">
-                {/* Character Info */}
-                <div className="text-center">
-                  <h2 className={`text-4xl font-bold bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent mb-2`}>
-                    {character.name}
-                  </h2>
-                  <p className="text-gray-400">
-                    Level {character.level} {raceInfo?.name} {classInfo?.name}
-                  </p>
-                </div>
-
-                {/* 3D Model Viewer */}
-                <div className="relative aspect-square bg-gradient-to-br from-dark-800 to-dark-700 rounded-xl border-2 border-dark-600 overflow-hidden">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <iframe
-                      src={`https://wowhead.com/3d-character?race=${character.race}&gender=${character.gender}&class=${character.class}&level=${character.level}`}
-                      className="w-full h-full"
-                      style={{ border: 'none' }}
-                      title="Character 3D Model"
-                    />
-                  </div>
-                  {/* Fallback image */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 hover:opacity-100 transition-opacity">
-                    <p className="text-sm text-gray-500">Loading 3D Model...</p>
-                  </div>
-                </div>
-
-                {/* Quick Stats */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-dark-700/50 rounded-lg p-3 text-center">
-                    <FaTrophy className="text-wow-gold mx-auto mb-1" />
-                    <p className="text-xs text-gray-500">Achievements</p>
-                    <p className="text-lg font-bold text-wow-gold">{character.achievements?.length || 0}</p>
-                  </div>
-                  <div className="bg-dark-700/50 rounded-lg p-3 text-center">
-                    <GiCrossedSwords className="text-red-400 mx-auto mb-1 text-xl" />
-                    <p className="text-xs text-gray-500">Kills</p>
-                    <p className="text-lg font-bold text-white">{character.totalKills || 0}</p>
-                  </div>
-                  <div className="bg-dark-700/50 rounded-lg p-3 text-center">
-                    <FaStar className="text-wow-ice mx-auto mb-1" />
-                    <p className="text-xs text-gray-500">Item Level</p>
-                    <p className="text-lg font-bold text-wow-ice">N/A</p>
-                  </div>
+            <div className="flex flex-col items-center justify-center h-96 space-y-4">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-20 w-20 border-4 border-dark-600 border-t-wow-gold"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <GiMagicSwirl className="text-wow-gold text-2xl animate-pulse" />
                 </div>
               </div>
+              <p className="text-gray-400 animate-pulse">Loading character data...</p>
+            </div>
+          ) : character ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8 overflow-y-auto max-h-[95vh]">
+              
+              {/* ==================== LEFT COLUMN ==================== */}
+              <div className="space-y-6">
+                
+                {/* CHARACTER HEADER */}
+                <motion.div 
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-center space-y-2"
+                >
+                  <div className="flex items-center justify-center space-x-2 mb-3">
+                    <span className="text-4xl">{classInfo?.icon}</span>
+                    <h2 className={`text-5xl font-bold bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
+                      {character.name}
+                    </h2>
+                  </div>
+                  
+                  <div className="flex items-center justify-center space-x-4 text-gray-300">
+                    <span className="px-3 py-1 bg-dark-700/50 rounded-full text-sm border border-dark-600">
+                      Level {character.level}
+                    </span>
+                    <span className="px-3 py-1 bg-dark-700/50 rounded-full text-sm border border-dark-600">
+                      {raceInfo?.name}
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-sm border ${
+                      raceInfo?.faction === 'Alliance' 
+                        ? 'bg-blue-600/20 border-blue-500/50 text-blue-400' 
+                        : 'bg-red-600/20 border-red-500/50 text-red-400'
+                    }`}>
+                      {raceInfo?.faction}
+                    </span>
+                  </div>
+                  
+                  <p className={`text-lg font-medium bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
+                    {classInfo?.name}
+                  </p>
+                </motion.div>
 
-              {/* Right: Tabs */}
+                {/* 3D MODEL VIEWER - FIXED */}
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="relative aspect-square bg-gradient-to-br from-dark-800 to-dark-700 rounded-xl border-2 border-dark-600 overflow-hidden shadow-lg"
+                >
+                  {/* WoW Model Viewer (Alternativa funcional) */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-dark-800/50">
+                    <div className="text-center space-y-4">
+                      {/* Render Race Icon */}
+                      <img
+                        src={`https://wow.zamimg.com/images/wow/icons/large/race_${raceInfo?.name.toLowerCase().replace(' ', '')}_${character.gender === 0 ? 'male' : 'female'}.jpg`}
+                        alt={raceInfo?.name}
+                        className="w-32 h-32 mx-auto rounded-full border-4 border-wow-gold/50 shadow-xl"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+                        }}
+                      />
+                      <div className="space-y-1">
+                        <p className="text-sm text-gray-500">3D Model Preview</p>
+                        <p className="text-xs text-gray-600">
+                          Race: {raceInfo?.name} | Gender: {character.gender === 0 ? 'Male' : 'Female'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Decorative corners */}
+                  <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-wow-gold/50"></div>
+                  <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-wow-gold/50"></div>
+                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-wow-gold/50"></div>
+                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-wow-gold/50"></div>
+                </motion.div>
+
+                {/* QUICK STATS - WoW Style */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="grid grid-cols-3 gap-3"
+                >
+                  <QuickStatCard
+                    icon={<FaTrophy className="text-wow-gold" />}
+                    label="Achievements"
+                    value={character.achievements?.length || 0}
+                    color="wow-gold"
+                  />
+                  <QuickStatCard
+                    icon={<GiCrossedSwords className="text-red-400" />}
+                    label="Kills"
+                    value={character.totalKills || 0}
+                    color="red"
+                  />
+                  <QuickStatCard
+                    icon={<FaStar className="text-wow-ice" />}
+                    label="Honor"
+                    value={character.totalHonorPoints || 0}
+                    color="wow-ice"
+                  />
+                </motion.div>
+              </div>
+
+              {/* ==================== RIGHT COLUMN - TABS ==================== */}
               <div className="space-y-4">
-                {/* Tab buttons */}
-                <div className="flex space-x-2 border-b border-dark-600">
+                
+                {/* TAB BUTTONS - WoW Style */}
+                <div className="flex space-x-2 border-b-2 border-dark-600">
                   {(['stats', 'equipment', 'achievements'] as const).map((tab) => (
-                    <button
+                    <motion.button
                       key={tab}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => setActiveTab(tab)}
-                      className={`px-4 py-2 font-medium capitalize transition-colors ${
+                      className={`relative px-6 py-3 font-bold capitalize transition-all ${
                         activeTab === tab
-                          ? 'text-wow-gold border-b-2 border-wow-gold'
-                          : 'text-gray-400 hover:text-white'
+                          ? 'text-wow-gold'
+                          : 'text-gray-500 hover:text-gray-300'
                       }`}
                     >
                       {tab}
-                    </button>
+                      {activeTab === tab && (
+                        <motion.div
+                          layoutId="activeTab"
+                          className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-wow-gold to-transparent"
+                          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                    </motion.button>
                   ))}
                 </div>
 
-                {/* Tab content */}
-                <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                {/* TAB CONTENT */}
+                <div className="space-y-4 max-h-[650px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-dark-800">
                   {activeTab === 'stats' && character.stats && (
                     <StatsTab stats={character.stats} character={character} />
                   )}
@@ -182,8 +284,15 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
               </div>
             </div>
           ) : (
-            <div className="p-8 text-center">
-              <p className="text-gray-400">Character not found</p>
+            <div className="flex flex-col items-center justify-center h-96 space-y-4">
+              <FaSkull className="text-6xl text-gray-600" />
+              <p className="text-xl text-gray-400">Character not found</p>
+              <button
+                onClick={onClose}
+                className="px-6 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg transition-colors"
+              >
+                Close
+              </button>
             </div>
           )}
         </motion.div>
@@ -192,65 +301,107 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
   );
 }
 
-// Stats Tab
+// ==================== QUICK STAT CARD COMPONENT ====================
+function QuickStatCard({ 
+  icon, 
+  label, 
+  value, 
+  color 
+}: { 
+  icon: React.ReactNode; 
+  label: string; 
+  value: number; 
+  color: string 
+}) {
+  return (
+    <motion.div
+      whileHover={{ scale: 1.05, y: -2 }}
+      className="bg-gradient-to-br from-dark-700 to-dark-800 rounded-xl p-4 text-center border-2 border-dark-600 hover:border-wow-gold/30 transition-all shadow-lg"
+    >
+      <div className="mb-2 flex justify-center text-2xl">
+        {icon}
+      </div>
+      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-2xl font-bold text-${color === 'wow-gold' ? 'wow-gold' : color === 'red' ? 'red-400' : 'wow-ice'}`}>
+        {value.toLocaleString()}
+      </p>
+    </motion.div>
+  );
+}
+
+// ==================== STATS TAB - ENHANCED WITH ICONS ====================
 function StatsTab({ stats, character }: { stats: any; character: any }) {
   const statGroups = [
     {
       title: 'Health & Power',
-      icon: FaHeart,
+      icon: GiHealthPotion,
       color: 'text-red-400',
+      borderColor: 'border-red-500/30',
+      bgGradient: 'from-red-600/10 to-dark-800',
       stats: [
-        { label: 'Health', value: stats.maxhealth, icon: GiHeartBottle },
-        { label: 'Mana', value: stats.maxpower1, icon: GiMagicSwirl },
+        { label: 'Health', value: stats.maxhealth || 0, icon: <FaHeart className="text-red-500" /> },
+        { label: 'Mana', value: stats.maxpower1 || 0, icon: <GiMagicSwirl className="text-blue-400" /> },
+        { label: 'Energy', value: stats.maxpower4 || 0, icon: <FaBolt className="text-yellow-400" /> },
       ],
     },
     {
-      title: 'Primary Stats',
-      icon: FaShieldAlt,
+      title: 'Primary Attributes',
+      icon: GiMuscleUp,
       color: 'text-wow-gold',
+      borderColor: 'border-wow-gold/30',
+      bgGradient: 'from-wow-gold/10 to-dark-800',
       stats: [
-        { label: 'Strength', value: stats.strength },
-        { label: 'Agility', value: stats.agility },
-        { label: 'Stamina', value: stats.stamina },
-        { label: 'Intellect', value: stats.intellect },
-        { label: 'Spirit', value: stats.spirit },
+        { label: 'Strength', value: stats.strength || 0, icon: <GiMuscleUp className="text-red-400" /> },
+        { label: 'Agility', value: stats.agility || 0, icon: <GiRunningNinja className="text-green-400" /> },
+        { label: 'Stamina', value: stats.stamina || 0, icon: <GiHealthPotion className="text-orange-400" /> },
+        { label: 'Intellect', value: stats.intellect || 0, icon: <GiBrain className="text-blue-400" /> },
+        { label: 'Spirit', value: stats.spirit || 0, icon: <GiSparkSpirit className="text-purple-400" /> },
       ],
     },
     {
-      title: 'Combat Stats',
+      title: 'Combat Statistics',
       icon: GiSwordsPower,
-      color: 'text-red-400',
+      color: 'text-orange-400',
+      borderColor: 'border-orange-500/30',
+      bgGradient: 'from-orange-600/10 to-dark-800',
       stats: [
-        { label: 'Attack Power', value: stats.attackPower },
-        { label: 'Spell Power', value: stats.spellPower },
-        { label: 'Armor', value: stats.armor },
-        { label: 'Crit %', value: stats.critPct?.toFixed(2) + '%' },
-        { label: 'Dodge %', value: stats.dodgePct?.toFixed(2) + '%' },
-        { label: 'Parry %', value: stats.parryPct?.toFixed(2) + '%' },
+        { label: 'Attack Power', value: stats.attackPower || 0, icon: <GiPunchBlast className="text-red-400" /> },
+        { label: 'Spell Power', value: stats.spellPower || 0, icon: <GiMagicSwirl className="text-purple-400" /> },
+        { label: 'Armor', value: stats.armor || 0, icon: <GiCheckedShield className="text-gray-400" /> },
+        { label: 'Critical Strike', value: (stats.critPct || 0).toFixed(2) + '%', icon: <FaStar className="text-yellow-400" /> },
+        { label: 'Dodge', value: (stats.dodgePct || 0).toFixed(2) + '%', icon: <GiRunningNinja className="text-green-400" /> },
+        { label: 'Parry', value: (stats.parryPct || 0).toFixed(2) + '%', icon: <FaShieldAlt className="text-blue-400" /> },
       ],
     },
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {statGroups.map((group, idx) => (
         <motion.div
           key={idx}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
           transition={{ delay: idx * 0.1 }}
-          className="bg-dark-700/50 rounded-xl p-4 border border-dark-600"
+          className={`bg-gradient-to-r ${group.bgGradient} rounded-xl p-5 border-2 ${group.borderColor} shadow-lg`}
         >
-          <div className="flex items-center space-x-2 mb-3">
-            <group.icon className={`${group.color} text-lg`} />
-            <h3 className="font-semibold text-white">{group.title}</h3>
+          <div className="flex items-center space-x-3 mb-4">
+            <group.icon className={`${group.color} text-2xl`} />
+            <h3 className="font-bold text-white text-lg">{group.title}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-4">
             {group.stats.map((stat, statIdx) => (
-              <div key={statIdx} className="flex justify-between items-center">
-                <span className="text-sm text-gray-400">{stat.label}</span>
-                <span className="font-semibold text-white">{stat.value || 0}</span>
-              </div>
+              <motion.div 
+                key={statIdx} 
+                whileHover={{ scale: 1.02 }}
+                className="flex items-center justify-between bg-dark-900/50 rounded-lg p-3 border border-dark-700"
+              >
+                <div className="flex items-center space-x-2">
+                  {stat.icon}
+                  <span className="text-sm text-gray-400">{stat.label}</span>
+                </div>
+                <span className="font-bold text-white text-lg">{stat.value.toLocaleString()}</span>
+              </motion.div>
             ))}
           </div>
         </motion.div>
@@ -259,7 +410,7 @@ function StatsTab({ stats, character }: { stats: any; character: any }) {
   );
 }
 
-// Equipment Tab
+// ==================== EQUIPMENT TAB ====================
 function EquipmentTab({ equipment }: { equipment: any[] }) {
   const slots: { [key: number]: string } = {
     0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
@@ -277,23 +428,24 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
             key={slotId}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600"
+            whileHover={{ scale: 1.02, x: 4 }}
+            className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/50 transition-all"
           >
-            <span className="text-sm text-gray-400">{slotName}</span>
+            <span className="text-sm font-medium text-gray-400 min-w-[100px]">{slotName}</span>
             {item ? (
               <div className="flex items-center space-x-2">
                 <img
                   src={`https://wow.zamimg.com/images/wow/icons/small/${item.entry}.jpg`}
                   alt="Item"
-                  className="w-8 h-8 rounded border border-wow-gold/30"
+                  className="w-10 h-10 rounded border-2 border-wow-gold/50 shadow-lg"
                   onError={(e) => {
                     e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/small/inv_misc_questionmark.jpg';
                   }}
                 />
-                <span className="text-sm text-wow-gold">Item {item.entry}</span>
+                <span className="text-sm text-wow-gold font-medium">Item {item.entry}</span>
               </div>
             ) : (
-              <span className="text-xs text-gray-600">Empty</span>
+              <span className="text-xs text-gray-600 italic">Empty</span>
             )}
           </motion.div>
         );
@@ -302,13 +454,14 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
   );
 }
 
-// Achievements Tab
+// ==================== ACHIEVEMENTS TAB ====================
 function AchievementsTab({ achievements }: { achievements: any[] }) {
   if (achievements.length === 0) {
     return (
-      <div className="text-center py-12">
-        <FaTrophy className="text-gray-600 text-5xl mx-auto mb-4" />
-        <p className="text-gray-400">No achievements yet</p>
+      <div className="text-center py-16 space-y-4">
+        <FaTrophy className="text-gray-600 text-6xl mx-auto opacity-50" />
+        <p className="text-gray-400 text-lg">No achievements unlocked yet</p>
+        <p className="text-gray-600 text-sm">Complete challenges to earn achievements!</p>
       </div>
     );
   }
@@ -321,15 +474,23 @@ function AchievementsTab({ achievements }: { achievements: any[] }) {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: idx * 0.02 }}
-          className="flex items-center space-x-3 bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/30 transition-colors"
+          whileHover={{ scale: 1.02, x: 4 }}
+          className="flex items-center space-x-3 bg-dark-700/50 rounded-lg p-4 border border-dark-600 hover:border-wow-gold/30 transition-all shadow-md"
         >
-          <FaTrophy className="text-wow-gold" />
+          <div className="w-12 h-12 bg-gradient-to-br from-wow-gold to-yellow-600 rounded-lg flex items-center justify-center shadow-lg">
+            <FaTrophy className="text-dark-900 text-xl" />
+          </div>
           <div className="flex-1">
-            <p className="text-sm font-medium text-white">Achievement #{achievement.achievement}</p>
+            <p className="text-sm font-bold text-white">Achievement #{achievement.achievement}</p>
             <p className="text-xs text-gray-500">
-              {new Date(achievement.date * 1000).toLocaleDateString()}
+              Completed: {new Date(achievement.date * 1000).toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
             </p>
           </div>
+          <FaStar className="text-wow-gold text-lg" />
         </motion.div>
       ))}
     </div>

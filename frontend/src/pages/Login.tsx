@@ -1,3 +1,5 @@
+// frontend/src/pages/Login.tsx
+
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -24,14 +26,9 @@ export default function Login() {
       const response = await authAPI.login(formData);
 
       if (response.data.success) {
-        setAuth(
-          {
-            id: response.data.user.id,           // ← Cambiado de 'account' a 'user'
-            username: response.data.user.username,
-            email: response.data.user.email,
-          },
-          response.data.token
-        );
+        // Guardar user y access token (refresh token va en httpOnly cookie)
+        setAuth(response.data.user, response.data.accessToken);
+        
         toast.success('Welcome back!');
         navigate('/dashboard');
       }
@@ -103,6 +100,7 @@ export default function Login() {
                   onChange={handleChange}
                   className="input-field pl-12"
                   placeholder="Enter username"
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -125,6 +123,7 @@ export default function Login() {
                   onChange={handleChange}
                   className="input-field pl-12"
                   placeholder="Enter password"
+                  autoComplete="current-password"
                 />
               </div>
             </div>
