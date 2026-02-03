@@ -3,6 +3,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { ItemTooltip } from './ItemTooltip';
+import { EnchantmentTooltip } from './EnchantmentTooltip';
+import { ManualTooltip } from './ManualTooltip';
 import { FaTimes, FaShieldAlt, FaStar, FaTrophy, FaHeart, FaSkull, FaBolt } from 'react-icons/fa';
 import { 
   GiCrossedSwords, 
@@ -138,7 +140,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
               
               {/* LEFT COLUMN */}
               <div className="space-y-6">
-                
                 <motion.div 
                   initial={{ opacity: 0, y: -20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -232,7 +233,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
 
               {/* RIGHT COLUMN */}
               <div className="space-y-4">
-                
                 <div className="flex space-x-2 border-b-2 border-dark-600">
                   {(['stats', 'equipment', 'achievements'] as const).map((tab) => (
                     <motion.button
@@ -289,6 +289,31 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
   );
 }
 
+// ==================== HELPER FUNCTIONS ====================
+
+function getQualityTextClass(quality: number): string {
+  const classes: Record<number, string> = {
+    0: 'text-gray-500',      // Poor
+    1: 'text-white',         // Common
+    2: 'text-green-400',     // Uncommon
+    3: 'text-blue-400',      // Rare
+    4: 'text-purple-400',    // Epic
+    5: 'text-orange-400',    // Legendary
+    6: 'text-yellow-400',    // Artifact
+    7: 'text-cyan-400',      // Heirloom
+  };
+  return classes[quality] || 'text-white';
+}
+
+function getGemColor(index: number): string {
+  const colors = [
+    'border-red-500 bg-red-900/50 hover:bg-red-800/70',      // Meta gem (roja)
+    'border-blue-500 bg-blue-900/50 hover:bg-blue-800/70',   // Gem azul
+    'border-yellow-500 bg-yellow-900/50 hover:bg-yellow-800/70', // Gem amarilla
+  ];
+  return colors[index] || 'border-purple-500 bg-purple-900/50 hover:bg-purple-800/70';
+}
+
 // ==================== COMPONENTS ====================
 
 function QuickStatCard({ 
@@ -319,6 +344,63 @@ function QuickStatCard({
         {value.toLocaleString()}
       </p>
     </motion.div>
+  );
+}
+
+// frontend/src/components/CharacterViewer.tsx (actualización de EnchantIndicator)
+
+interface EnchantData {
+  id: number;
+  name: string;
+  stats: string[];
+  description: string;
+}
+
+function EnchantIndicator({ 
+  enchantSpellId,
+  enchantData
+}: { 
+  enchantSpellId: number;
+  enchantData?: EnchantData | null;
+}) {
+  console.log('✨ [ENCHANT] Rendering enchant:', { enchantSpellId, enchantData });
+
+  if (!enchantSpellId || enchantSpellId === 0) {
+    console.warn('⚠️ [ENCHANT] Invalid enchant ID:', enchantSpellId);
+    return null;
+  }
+
+  // Si tenemos datos del enchantment, usar ManualTooltip
+  if (enchantData && enchantData.stats && enchantData.stats.length > 0) {
+    return (
+      <ManualTooltip
+        title={enchantData.name || `Enchant ${enchantSpellId}`}
+        stats={enchantData.stats}
+        description={enchantData.description}
+        type="enchant"
+      >
+        <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
+          <FaBolt className="inline w-3 h-3" />
+        </div>
+      </ManualTooltip>
+    );
+  }
+
+  // Fallback: usar EnchantmentTooltip de WotLKDB
+  return (
+    <EnchantmentTooltip 
+      enchantmentId={enchantSpellId} 
+      type="enchant"
+      className="inline-block"
+    >
+      <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
+        <FaBolt className="inline w-3 h-3" />
+        
+        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
+          Enchant ID: {enchantSpellId}
+        </div>
+      </div>
+    </EnchantmentTooltip>
   );
 }
 
@@ -404,6 +486,8 @@ function StatsTab({ stats }: { stats: any }) {
   );
 }
 
+// frontend/src/components/CharacterViewer.tsx (actualización de EquipmentTab)
+
 function EquipmentTab({ equipment }: { equipment: any[] }) {
   const slots: { [key: number]: string } = {
     0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
@@ -411,6 +495,20 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
     10: 'Finger 1', 11: 'Finger 2', 12: 'Trinket 1', 13: 'Trinket 2',
     14: 'Back', 15: 'Main Hand', 16: 'Off Hand', 17: 'Ranged', 18: 'Tabard',
   };
+
+  useEffect(() => {
+    console.log('📊 [EQUIPMENT TAB] Equipment data:', equipment);
+    equipment?.forEach((item, idx) => {
+      console.log(`  Item ${idx}:`, {
+        slot: item.slot,
+        name: item.name,
+        gems: item.enchantmentsParsed?.gems,
+        gemsData: item.gemsData,
+        enchant: item.enchantmentsParsed?.permanent,
+        enchantData: item.enchantmentData
+      });
+    });
+  }, [equipment]);
 
   return (
     <div className="grid grid-cols-1 gap-2">
@@ -431,7 +529,6 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
             
             {item ? (
               <div className="flex items-center space-x-3 flex-1">
-                {/* ✅ Icono simple: solo necesita icon, name, quality */}
                 <ItemIcon
                   icon={item.icon}
                   name={item.name}
@@ -439,22 +536,36 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
                   size="small"
                 />
                 
-                {/* Nombre con tooltip */}
                 <ItemTooltip
                   itemId={item.itemEntry}
-                  enchantId={parseEnchant(item.enchantmentsParsed)}
-                  gems={parseGems(item.enchantmentsParsed)}
+                  enchantId={item.enchantmentsParsed?.permanent}
+                  gems={item.enchantmentsParsed?.gems}
                   className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
                 >
                   {item.name}
                 </ItemTooltip>
                 
-                {/* Gemas/encantamientos */}
+                {/* ✅ Indicadores con datos reales */}
                 <div className="flex items-center space-x-1 flex-shrink-0">
-                  {parseGems(item.enchantmentsParsed).map((gemId, idx) => (
-                    <GemIndicator key={idx} gemId={gemId} />
-                  ))}
-                  {parseEnchant(item.enchantmentsParsed) && <EnchantIndicator />}
+                  {/* Gemas con datos completos */}
+                  {item.gemsData?.length > 0 ? (
+                    item.gemsData.map((gemData: any, idx: number) => (
+                      <GemIndicator 
+                        key={`gem-${item.slot}-${idx}`}
+                        gemSpellId={item.enchantmentsParsed.gems[idx]}
+                        gemData={gemData}
+                        index={idx}
+                      />
+                    ))
+                  ) : null}
+                  
+                  {/* Enchantment con datos completos */}
+                  {item.enchantmentData && (
+                    <EnchantIndicator 
+                      enchantSpellId={item.enchantmentsParsed.permanent}
+                      enchantData={item.enchantmentData}
+                    />
+                  )}
                 </div>
               </div>
             ) : (
@@ -466,42 +577,82 @@ function EquipmentTab({ equipment }: { equipment: any[] }) {
     </div>
   );
 }
-// Helper para color de texto según calidad
-function getQualityTextClass(quality: number): string {
-  const classes: Record<number, string> = {
-    0: 'text-gray-500',      // Poor
-    1: 'text-white',         // Common
-    2: 'text-green-400',     // Uncommon
-    3: 'text-blue-400',      // Rare
-    4: 'text-purple-400',    // Epic
-    5: 'text-orange-400',    // Legendary
-    6: 'text-yellow-400',    // Artifact
-    7: 'text-cyan-400',      // Heirloom
-  };
-  return classes[quality] || 'text-white';
+
+// frontend/src/components/CharacterViewer.tsx (actualización de GemIndicator)
+
+interface GemData {
+  id: number;
+  name: string;
+  stats: string[];
+  description: string;
 }
 
-function parseEnchant(enchantmentsParsed: any): number | undefined {
-  return enchantmentsParsed?.permanent;
-}
+function GemIndicator({ 
+  gemSpellId,
+  gemData,
+  index
+}: { 
+  gemSpellId: number;
+  gemData?: GemData | null;
+  index: number;
+}) {
+  console.log(`💎 [GEM] Rendering gem ${index + 1}:`, { gemSpellId, gemData });
 
-function parseGems(enchantmentsParsed: any): number[] {
-  return enchantmentsParsed?.gems || [];
-}
+  if (!gemSpellId || gemSpellId === 0) {
+    console.warn(`⚠️ [GEM] Invalid gem ID at index ${index}:`, gemSpellId);
+    return null;
+  }
 
-function GemIndicator({ gemId }: { gemId: number }) {
+  // Si tenemos datos de la gema, usar ManualTooltip
+  if (gemData && gemData.stats && gemData.stats.length > 0) {
+    return (
+      <ManualTooltip
+        title={gemData.name || `Gem ${gemSpellId}`}
+        stats={gemData.stats}
+        description={gemData.description}
+        type="gem"
+      >
+        <div className="relative group">
+          <div 
+            className={`
+              w-5 h-5 rounded-full border-2 cursor-pointer
+              transition-all duration-200
+              hover:scale-125 hover:shadow-lg hover:shadow-purple-500/50
+              ${getGemColor(index)}
+            `}
+          >
+            <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
+          </div>
+        </div>
+      </ManualTooltip>
+    );
+  }
+
+  // Fallback: usar EnchantmentTooltip de WotLKDB
   return (
-    <ItemTooltip itemId={gemId} className="inline-block">
-      <div className="w-4 h-4 rounded-full border border-purple-500 bg-purple-900/50 hover:bg-purple-800/70 transition-colors cursor-pointer" />
-    </ItemTooltip>
-  );
-}
-
-function EnchantIndicator() {
-  return (
-    <div className="px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
-      <FaBolt className="inline w-3 h-3" />
-    </div>
+    <EnchantmentTooltip 
+      enchantmentId={gemSpellId} 
+      type="gem"
+      className="inline-block"
+    >
+      <div className="relative group">
+        <div 
+          className={`
+            w-5 h-5 rounded-full border-2 cursor-pointer
+            transition-all duration-200
+            hover:scale-125 hover:shadow-lg
+            ${getGemColor(index)}
+          `}
+          title={`Gem Slot ${index + 1} (ID: ${gemSpellId})`}
+        >
+          <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
+        </div>
+        
+        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
+          Gem ID: {gemSpellId}
+        </div>
+      </div>
+    </EnchantmentTooltip>
   );
 }
 

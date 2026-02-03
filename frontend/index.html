@@ -1,14 +1,29 @@
+<!-- frontend/index.html -->
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
+    
+    <!-- ✅ CONFIGURACIÓN PREVIA AL SCRIPT -->
+    <script>
+      var wotlkdb_tooltips = {
+        config: {
+          locale: 'es'
+        }
+      };
+    </script>
+    
+    <!-- ✅ SCRIPT CON LOCALE ESPAÑOL -->
     <script
       type="text/javascript"
-      src="https://wotlkdb.com/static/widgets/power.js"
+      src="https://wotlkdb.com/static/widgets/power.js?locale=es"
+      defer
     ></script>
+    
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trinity CMS - WoW Server</title>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">

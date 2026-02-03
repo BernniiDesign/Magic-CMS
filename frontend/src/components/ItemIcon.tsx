@@ -1,10 +1,9 @@
 // frontend/src/components/ItemIcon.tsx
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 
 interface ItemIconProps {
-  icon: string;          // De DB: "inv_sword_153" o "displayid_64396"
-  displayid?: number;    // Opcional: para construcción de URL
+  icon: string;          // Ya viene con extensión desde backend
   name: string;
   quality: number;
   size?: 'tiny' | 'small' | 'medium' | 'large';
@@ -19,19 +18,18 @@ const SIZE_CONFIG = {
 };
 
 const QUALITY_CLASSES: Record<number, string> = {
-  0: 'opacity-60',                    // Poor (gray)
-  1: '',                              // Common (white) - sin borde especial
-  2: 'ring-2 ring-green-500/50',     // Uncommon (green)
-  3: 'ring-2 ring-blue-500/50',      // Rare (blue)
-  4: 'ring-2 ring-purple-500/50',    // Epic (purple)
-  5: 'ring-2 ring-orange-500/50',    // Legendary (orange)
-  6: 'ring-2 ring-yellow-500/50',    // Artifact (gold)
-  7: 'ring-2 ring-cyan-400/50',      // Heirloom (cyan)
+  0: 'opacity-60',                    // Poor
+  1: '',                              // Common
+  2: 'ring-2 ring-green-500/50',     // Uncommon
+  3: 'ring-2 ring-blue-500/50',      // Rare
+  4: 'ring-2 ring-purple-500/50',    // Epic
+  5: 'ring-2 ring-orange-500/50',    // Legendary
+  6: 'ring-2 ring-yellow-500/50',    // Artifact
+  7: 'ring-2 ring-cyan-400/50',      // Heirloom
 };
 
 export function ItemIcon({
   icon,
-  displayid,
   name,
   quality,
   size = 'small',
@@ -40,23 +38,16 @@ export function ItemIcon({
   const [iconError, setIconError] = useState(false);
   const config = SIZE_CONFIG[size];
   
-  // Determinar URL del icono
-  const iconUrl = useMemo(() => {
-    // Si el icono viene con flag "displayid_XXX", usar displayid directamente
-    if (icon.startsWith('displayid_')) {
-      const displayIdFromFlag = icon.replace('displayid_', '');
-      return `https://wow.zamimg.com/modelviewer/live/previews/item=${displayIdFromFlag}.png`;
-    }
-    
-    // Si hay displayid explícito y el icono de DB falló
-    if (iconError && displayid) {
-      return `https://wow.zamimg.com/modelviewer/live/previews/item=${displayid}.png`;
-    }
-    
-    // Icono normal desde DB (quitar .jpg si existe)
-    const iconName = icon.replace('.jpg', '').replace('.png', '');
-    return `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/${iconName}.jpg`;
-  }, [icon, displayid, iconError, config.wowhead]);
+  // ✅ Limpiar nombre del icono (quitar extensión para URL)
+  const iconName = icon
+    .replace('.jpg', '')
+    .replace('.png', '')
+    .toLowerCase();
+  
+  // ✅ URL simple: siempre WoW Zamimg
+  const iconUrl = iconError
+    ? `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/inv_misc_questionmark.jpg`
+    : `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/${iconName}.jpg`;
 
   const qualityClass = QUALITY_CLASSES[quality] || '';
 
@@ -66,17 +57,9 @@ export function ItemIcon({
         src={iconUrl}
         alt={name}
         className={`${config.className} rounded-sm ${qualityClass}`}
-        onError={(e) => {
+        onError={() => {
           if (!iconError) {
             setIconError(true);
-            
-            // Segundo fallback: icono genérico
-            if (!displayid) {
-              e.currentTarget.src = `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/inv_misc_questionmark.jpg`;
-            }
-          } else {
-            // Último recurso
-            e.currentTarget.src = `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/inv_misc_questionmark.jpg`;
           }
         }}
       />
