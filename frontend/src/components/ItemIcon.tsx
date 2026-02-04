@@ -32,7 +32,7 @@ export function ItemIcon({
   icon,
   name,
   quality,
-  size = 'small',
+  size = 'large',
   className = '',
 }: ItemIconProps) {
   const [iconError, setIconError] = useState(false);
@@ -46,8 +46,8 @@ export function ItemIcon({
   
   // ✅ URL simple: siempre WoW Zamimg
   const iconUrl = iconError
-    ? `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/inv_misc_questionmark.jpg`
-    : `https://wow.zamimg.com/images/wow/icons/${config.wowhead}/${iconName}.jpg`;
+    ? `https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg`
+    : `https://wow.zamimg.com/images/wow/icons/large/${iconName}.jpg`;
 
   const qualityClass = QUALITY_CLASSES[quality] || '';
 

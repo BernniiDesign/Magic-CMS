@@ -3,8 +3,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
 import { ItemTooltip } from './ItemTooltip';
-import { EnchantmentTooltip } from './EnchantmentTooltip';
-import { ManualTooltip } from './ManualTooltip';
 import { FaTimes, FaShieldAlt, FaStar, FaTrophy, FaHeart, FaSkull, FaBolt } from 'react-icons/fa';
 import { 
   GiCrossedSwords, 
@@ -31,7 +29,7 @@ interface CharacterViewerProps {
 export default function CharacterViewer({ isOpen, onClose, characterGuid }: CharacterViewerProps) {
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'stats' | 'equipment' | 'achievements'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'equipment' | 'achievements'>('equipment');
 
   useEffect(() => {
     if (isOpen && characterGuid) {
@@ -103,7 +101,7 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
@@ -112,8 +110,9 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-7xl max-h-[95vh] overflow-hidden bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 rounded-2xl border-2 border-wow-gold/40 shadow-2xl shadow-wow-gold/20"
+          className="relative w-full max-w-[1400px] max-h-[95vh] overflow-hidden bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 rounded-2xl border-2 border-wow-gold/40 shadow-2xl shadow-wow-gold/20"
         >
+          {/* Header decorativo */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-wow-gold to-transparent" />
           
           <motion.button
@@ -136,114 +135,23 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
               <p className="text-gray-400 animate-pulse">Loading character data...</p>
             </div>
           ) : character ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 p-8 overflow-y-auto max-h-[95vh]">
-              
-              {/* LEFT COLUMN */}
-              <div className="space-y-6">
-                <motion.div 
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-center space-y-2"
-                >
-                  <div className="flex items-center justify-center space-x-2 mb-3">
-                    <span className="text-4xl">{classInfo?.icon}</span>
-                    <h2 className={`text-5xl font-bold bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
-                      {character.name}
-                    </h2>
-                  </div>
-                  
-                  <div className="flex items-center justify-center space-x-4 text-gray-300">
-                    <span className="px-3 py-1 bg-dark-700/50 rounded-full text-sm border border-dark-600">
-                      Level {character.level}
-                    </span>
-                    <span className="px-3 py-1 bg-dark-700/50 rounded-full text-sm border border-dark-600">
-                      {raceInfo?.name}
-                    </span>
-                    <span className={`px-3 py-1 rounded-full text-sm border ${
-                      raceInfo?.faction === 'Alliance' 
-                        ? 'bg-blue-600/20 border-blue-500/50 text-blue-400' 
-                        : 'bg-red-600/20 border-red-500/50 text-red-400'
-                    }`}>
-                      {raceInfo?.faction}
-                    </span>
-                  </div>
-                  
-                  <p className={`text-lg font-medium bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
-                    {classInfo?.name}
-                  </p>
-                </motion.div>
+            <div className="overflow-y-auto max-h-[95vh]">
+              {/* HEADER DEL PERSONAJE */}
+              <CharacterHeader character={character} classInfo={classInfo} raceInfo={raceInfo} />
 
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.2 }}
-                  className="relative aspect-square bg-gradient-to-br from-dark-800 to-dark-700 rounded-xl border-2 border-dark-600 overflow-hidden shadow-lg"
-                >
-                  <div className="absolute inset-0 flex items-center justify-center bg-dark-800/50">
-                    <div className="text-center space-y-4">
-                      <img
-                        src={`https://wow.zamimg.com/images/wow/icons/large/race_${raceInfo?.name.toLowerCase().replace(' ', '')}_${character.gender === 0 ? 'male' : 'female'}.jpg`}
-                        alt={raceInfo?.name}
-                        className="w-32 h-32 mx-auto rounded-full border-4 border-wow-gold/50 shadow-xl"
-                        onError={(e) => {
-                          e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
-                        }}
-                      />
-                      <div className="space-y-1">
-                        <p className="text-sm text-gray-500">3D Model Preview</p>
-                        <p className="text-xs text-gray-600">
-                          Race: {raceInfo?.name} | Gender: {character.gender === 0 ? 'Male' : 'Female'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-wow-gold/50"></div>
-                  <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-wow-gold/50"></div>
-                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-wow-gold/50"></div>
-                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-wow-gold/50"></div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 }}
-                  className="grid grid-cols-3 gap-3"
-                >
-                  <QuickStatCard
-                    icon={<FaTrophy className="text-wow-gold" />}
-                    label="Achievements"
-                    value={character.achievements?.length || 0}
-                    color="wow-gold"
-                  />
-                  <QuickStatCard
-                    icon={<GiCrossedSwords className="text-red-400" />}
-                    label="Kills"
-                    value={character.totalKills || 0}
-                    color="red"
-                  />
-                  <QuickStatCard
-                    icon={<FaStar className="text-wow-ice" />}
-                    label="Honor"
-                    value={character.totalHonorPoints || 0}
-                    color="wow-ice"
-                  />
-                </motion.div>
-              </div>
-
-              {/* RIGHT COLUMN */}
-              <div className="space-y-4">
-                <div className="flex space-x-2 border-b-2 border-dark-600">
-                  {(['stats', 'equipment', 'achievements'] as const).map((tab) => (
+              {/* TABS */}
+              <div className="px-8 py-4 border-b border-dark-600">
+                <div className="flex space-x-2">
+                  {(['equipment', 'stats', 'achievements'] as const).map((tab) => (
                     <motion.button
                       key={tab}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => setActiveTab(tab)}
-                      className={`relative px-6 py-3 font-bold capitalize transition-all ${
+                      className={`relative px-6 py-3 font-bold capitalize transition-all rounded-t-lg ${
                         activeTab === tab
-                          ? 'text-wow-gold'
-                          : 'text-gray-500 hover:text-gray-300'
+                          ? 'text-wow-gold bg-dark-800/50'
+                          : 'text-gray-500 hover:text-gray-300 hover:bg-dark-800/30'
                       }`}
                     >
                       {tab}
@@ -257,18 +165,19 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                     </motion.button>
                   ))}
                 </div>
+              </div>
 
-                <div className="space-y-4 max-h-[650px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-dark-600 scrollbar-track-dark-800">
-                  {activeTab === 'stats' && character.stats && (
-                    <StatsTab stats={character.stats} />
-                  )}
-                  {activeTab === 'equipment' && (
-                    <EquipmentTab equipment={character.equipment || []} />
-                  )}
-                  {activeTab === 'achievements' && (
-                    <AchievementsTab achievements={character.achievements || []} />
-                  )}
-                </div>
+              {/* CONTENIDO */}
+              <div className="p-8">
+                {activeTab === 'equipment' && (
+                  <ModernEquipmentView equipment={character.equipment || []} />
+                )}
+                {activeTab === 'stats' && character.stats && (
+                  <StatsTab stats={character.stats} />
+                )}
+                {activeTab === 'achievements' && (
+                  <AchievementsTab achievements={character.achievements || []} />
+                )}
               </div>
             </div>
           ) : (
@@ -289,120 +198,337 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
   );
 }
 
-// ==================== HELPER FUNCTIONS ====================
+// ==================== HEADER COMPONENT ====================
 
-function getQualityTextClass(quality: number): string {
-  const classes: Record<number, string> = {
-    0: 'text-gray-500',      // Poor
-    1: 'text-white',         // Common
-    2: 'text-green-400',     // Uncommon
-    3: 'text-blue-400',      // Rare
-    4: 'text-purple-400',    // Epic
-    5: 'text-orange-400',    // Legendary
-    6: 'text-yellow-400',    // Artifact
-    7: 'text-cyan-400',      // Heirloom
-  };
-  return classes[quality] || 'text-white';
-}
-
-function getGemColor(index: number): string {
-  const colors = [
-    'border-red-500 bg-red-900/50 hover:bg-red-800/70',      // Meta gem (roja)
-    'border-blue-500 bg-blue-900/50 hover:bg-blue-800/70',   // Gem azul
-    'border-yellow-500 bg-yellow-900/50 hover:bg-yellow-800/70', // Gem amarilla
-  ];
-  return colors[index] || 'border-purple-500 bg-purple-900/50 hover:bg-purple-800/70';
-}
-
-// ==================== COMPONENTS ====================
-
-function QuickStatCard({ 
-  icon, 
-  label, 
-  value, 
-  color 
-}: { 
-  icon: React.ReactNode; 
-  label: string; 
-  value: number; 
-  color: string 
-}) {
+function CharacterHeader({ character, classInfo, raceInfo }: any) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.05, y: -2 }}
-      className="bg-gradient-to-br from-dark-700 to-dark-800 rounded-xl p-4 text-center border-2 border-dark-600 hover:border-wow-gold/30 transition-all shadow-lg"
-    >
-      <div className="mb-2 flex justify-center text-2xl">
+    <div className="relative bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-8 border-b border-dark-600">
+      <div className="flex items-center justify-between">
+        {/* Left: Character Info */}
+        <div className="flex items-center space-x-6">
+          <div className="relative">
+            <img
+              src={`https://wow.zamimg.com/images/wow/icons/large/race_${raceInfo?.name.toLowerCase().replace(' ', '')}_${character.gender === 0 ? 'male' : 'female'}.jpg`}
+              alt={raceInfo?.name}
+              className="w-24 h-24 rounded-full border-4 border-wow-gold shadow-xl"
+              onError={(e) => {
+                e.currentTarget.src = 'https://wow.zamimg.com/images/wow/icons/large/inv_misc_questionmark.jpg';
+              }}
+            />
+            <div className="absolute -bottom-2 -right-2 bg-gradient-to-br from-wow-gold to-yellow-600 text-dark-900 font-bold rounded-full w-10 h-10 flex items-center justify-center text-lg border-2 border-dark-900">
+              {character.level}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center space-x-3 mb-2">
+              <span className="text-4xl">{classInfo?.icon}</span>
+              <h2 className={`text-4xl font-bold bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
+                {character.name}
+              </h2>
+              {character.online === 1 && (
+                <div className="flex items-center space-x-1 px-3 py-1 bg-green-600/20 border border-green-500/30 rounded-full">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="text-xs font-medium text-green-400">Online</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center space-x-3 text-sm">
+              <span className={`font-medium bg-gradient-to-r ${classInfo?.color} bg-clip-text text-transparent`}>
+                {classInfo?.name}
+              </span>
+              <span className="text-gray-500">•</span>
+              <span className="text-gray-400">{raceInfo?.name}</span>
+              <span className="text-gray-500">•</span>
+              <span className={raceInfo?.faction === 'Alliance' ? 'text-blue-400' : 'text-red-400'}>
+                {raceInfo?.faction}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Quick Stats */}
+        <div className="grid grid-cols-3 gap-4">
+          <QuickStatCard
+            icon={<FaTrophy className="text-wow-gold" />}
+            label="Achievements"
+            value={character.achievements?.length || 0}
+            color="wow-gold"
+          />
+          <QuickStatCard
+            icon={<GiCrossedSwords className="text-red-400" />}
+            label="Kills"
+            value={character.totalKills || 0}
+            color="red"
+          />
+          <QuickStatCard
+            icon={<FaStar className="text-wow-ice" />}
+            label="Honor"
+            value={character.totalHonorPoints || 0}
+            color="wow-ice"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickStatCard({ icon, label, value, color }: any) {
+  return (
+    <div className="bg-dark-800/50 rounded-lg p-3 text-center border border-dark-600">
+      <div className="mb-1 flex justify-center text-xl">
         {icon}
       </div>
       <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${
+      <p className={`text-xl font-bold ${
         color === 'wow-gold' ? 'text-wow-gold' : 
         color === 'red' ? 'text-red-400' : 
         'text-wow-ice'
       }`}>
         {value.toLocaleString()}
       </p>
-    </motion.div>
+    </div>
   );
 }
 
-// frontend/src/components/CharacterViewer.tsx (actualización de EnchantIndicator)
+// ==================== MODERN EQUIPMENT VIEW ====================
 
-interface EnchantData {
-  id: number;
-  name: string;
-  stats: string[];
-  description: string;
-}
+function ModernEquipmentView({ equipment }: { equipment: any[] }) {
+  const leftSlots = [0, 1, 2, 14, 4, 8, 9, 5]; // Head, Neck, Shoulders, Back, Chest, Wrists, Hands, Waist
+  const rightSlots = [6, 7, 10, 11, 12, 13, 15, 16, 17]; // Legs, Feet, Finger1, Finger2, Trinket1, Trinket2, Main, Off, Ranged
 
-function EnchantIndicator({ 
-  enchantSpellId,
-  enchantData
-}: { 
-  enchantSpellId: number;
-  enchantData?: EnchantData | null;
-}) {
-  console.log('✨ [ENCHANT] Rendering enchant:', { enchantSpellId, enchantData });
-
-  if (!enchantSpellId || enchantSpellId === 0) {
-    console.warn('⚠️ [ENCHANT] Invalid enchant ID:', enchantSpellId);
-    return null;
-  }
-
-  // Si tenemos datos del enchantment, usar ManualTooltip
-  if (enchantData && enchantData.stats && enchantData.stats.length > 0) {
-    return (
-      <ManualTooltip
-        title={enchantData.name || `Enchant ${enchantSpellId}`}
-        stats={enchantData.stats}
-        description={enchantData.description}
-        type="enchant"
-      >
-        <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
-          <FaBolt className="inline w-3 h-3" />
-        </div>
-      </ManualTooltip>
-    );
-  }
-
-  // Fallback: usar EnchantmentTooltip de WotLKDB
   return (
-    <EnchantmentTooltip 
-      enchantmentId={enchantSpellId} 
-      type="enchant"
-      className="inline-block"
-    >
-      <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
-        <FaBolt className="inline w-3 h-3" />
-        
-        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
-          Enchant ID: {enchantSpellId}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* LEFT COLUMN */}
+      <div className="space-y-2">
+        {leftSlots.map((slotId) => {
+          const item = equipment.find((eq) => eq.slot === slotId);
+          return <EquipmentSlot key={slotId} slotId={slotId} item={item} />;
+        })}
+      </div>
+
+      {/* CENTER: CHARACTER MODEL */}
+      <div className="flex items-center justify-center">
+        <div className="relative w-full aspect-square max-w-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-dark-800 to-dark-700 rounded-2xl border-2 border-dark-600 overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-wow-gold/5 via-transparent to-transparent"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center space-y-4">
+                <GiSwordsPower className="text-wow-gold text-8xl mx-auto opacity-30" />
+                <p className="text-gray-500 text-sm">Character Model</p>
+                <p className="text-gray-600 text-xs">Preview Coming Soon</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Decorative corners */}
+          <div className="absolute top-0 left-0 w-12 h-12 border-t-2 border-l-2 border-wow-gold/50"></div>
+          <div className="absolute top-0 right-0 w-12 h-12 border-t-2 border-r-2 border-wow-gold/50"></div>
+          <div className="absolute bottom-0 left-0 w-12 h-12 border-b-2 border-l-2 border-wow-gold/50"></div>
+          <div className="absolute bottom-0 right-0 w-12 h-12 border-b-2 border-r-2 border-wow-gold/50"></div>
         </div>
       </div>
-    </EnchantmentTooltip>
+
+      {/* RIGHT COLUMN */}
+      <div className="space-y-2">
+        {rightSlots.map((slotId) => {
+          const item = equipment.find((eq) => eq.slot === slotId);
+          return <EquipmentSlot key={slotId} slotId={slotId} item={item} />;
+        })}
+      </div>
+    </div>
   );
 }
+
+/**
+ * EquipmentSlot component for displaying a single equipment slot and its item.
+ */
+function EquipmentSlot({ slotId, item }: { slotId: number; item: any }) {
+  // You can customize the slot label or icon here if needed
+  return (
+    <div className="flex items-center space-x-2 bg-dark-700/40 rounded-lg p-2 border border-dark-600 min-h-[48px]">
+      <span className="text-xs text-gray-500 min-w-[60px]">{`Slot ${slotId}`}</span>
+      {item ? (
+        <div className="flex items-center space-x-2">
+          <ItemIcon icon={item.icon} name={item.name} quality={item.quality} size="small" />
+          <ItemTooltip
+            itemId={item.itemEntry}
+            enchantItemId={item.enchantData?.itemId}
+            gemItemIds={item.gemsData?.map((g: any) => g.itemId).filter(Boolean)}
+            randomProperty={item.randomProperty}
+            className="text-xs font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate"
+          >
+            {item.name}
+          </ItemTooltip>
+        </div>
+      ) : (
+        <span className="text-xs text-gray-600 italic">Empty</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ✅ EQUIPMENT TAB - USA ITEM IDS RESUELTOS DESDE BACKEND
+ */
+function EquipmentTab({ equipment }: { equipment: any[] }) {
+  const slots: { [key: number]: string } = {
+    0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
+    5: 'Waist', 6: 'Legs', 7: 'Feet', 8: 'Wrists', 9: 'Hands',
+    10: 'Finger 1', 11: 'Finger 2', 12: 'Trinket 1', 13: 'Trinket 2',
+    14: 'Back', 15: 'Main Hand', 16: 'Off Hand', 17: 'Ranged', 18: 'Tabard',
+  };
+
+  useEffect(() => {
+    console.log('📊 [EQUIPMENT TAB] Data recibida:', equipment);
+    equipment?.forEach((item, idx) => {
+      console.log(`  Item ${idx}:`, {
+        slot: item.slot,
+        name: item.name,
+        enchantData: item.enchantData,
+        gemsData: item.gemsData,
+      });
+    });
+  }, [equipment]);
+
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {Object.entries(slots).map(([slotId, slotName]) => {
+        const item = equipment.find((eq) => eq.slot === parseInt(slotId));
+        
+        function getQualityTextClass(quality: any) {
+          throw new Error('Function not implemented.');
+        }
+
+        return (
+          <motion.div
+            key={slotId}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            whileHover={{ scale: 1.02, x: 4 }}
+            className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/50 transition-all"
+          >
+            <span className="text-sm font-medium text-gray-400 min-w-[100px]">
+              {slotName}
+            </span>
+            
+            {item ? (
+              <div className="flex items-center space-x-3 flex-1">
+                <ItemIcon
+                  icon={item.icon}
+                  name={item.name}
+                  quality={item.quality}
+                  size="small"
+                />
+                
+                {/* ✅ TOOLTIP DEL ITEM CON ITEM IDS RESUELTOS */}
+                <ItemTooltip
+                  itemId={item.itemEntry}
+                  enchantItemId={item.enchantData?.itemId}  // ✅ Item ID del enchant
+                  gemItemIds={item.gemsData?.map((g: any) => g.itemId).filter(Boolean)} // ✅ Array de item IDs de gemas
+                  randomProperty={item.randomProperty}
+                  className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
+                >
+                  {item.name}
+                </ItemTooltip>
+                
+                {/* ✅ INDICADORES VISUALES */}
+                <div className="flex items-center space-x-1 flex-shrink-0">
+                  {/* Mostrar gemas con tooltips individuales */}
+                  {item.gemsData?.map((gem: any, idx: number) => (
+                    gem.itemId && (
+                      <GemIndicator 
+                        key={`gem-${item.slot}-${idx}`}
+                        gemItemId={gem.itemId}  // ✅ Item ID de la gema
+                        gemName={gem.name}
+                        index={idx}
+                      />
+                    )
+                  ))}
+                  
+                  {/* Mostrar enchant con tooltip */}
+                  {item.enchantData?.itemId && (
+                    <EnchantIndicator 
+                      enchantItemId={item.enchantData.itemId}  // ✅ Item ID del enchant
+                      enchantName={item.enchantData.name}
+                    />
+                  )}
+                </div>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-600 italic">Empty</span>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * ✅ INDICADOR DE GEMA - USA ITEM ID
+ */
+function GemIndicator({ 
+  gemItemId,
+  gemName,
+  index
+}: { 
+  gemItemId: number;
+  gemName: string;
+  index: number;
+}) {
+  const getGemColor = (idx: number) => {
+    const colors = [
+      'border-red-500 bg-red-900/50 hover:bg-red-800/70',
+      'border-blue-500 bg-blue-900/50 hover:bg-blue-800/70',
+      'border-yellow-500 bg-yellow-900/50 hover:bg-yellow-800/70',
+    ];
+    return colors[idx] || 'border-purple-500 bg-purple-900/50 hover:bg-purple-800/70';
+  };
+
+  return (
+    <ItemTooltip itemId={gemItemId} className="inline-block">
+      <div className="relative group">
+        <div 
+          className={`
+            w-5 h-5 rounded-full border-2 cursor-pointer
+            transition-all duration-200
+            hover:scale-125 hover:shadow-lg
+            ${getGemColor(index)}
+          `}
+          title={gemName}
+        >
+          <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
+        </div>
+      </div>
+    </ItemTooltip>
+  );
+}
+
+/**
+ * ✅ INDICADOR DE ENCHANT - USA ITEM ID
+ */
+function EnchantIndicator({ 
+  enchantItemId,
+  enchantName
+}: { 
+  enchantItemId: number;
+  enchantName: string;
+}) {
+  return (
+    <ItemTooltip itemId={enchantItemId} className="inline-block">
+      <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
+        <FaBolt className="inline w-3 h-3" />
+        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
+          {enchantName}
+        </div>
+      </div>
+    </ItemTooltip>
+  );
+}
+
+// ==================== STATS TAB ====================
 
 function StatsTab({ stats }: { stats: any }) {
   const statGroups = [
@@ -450,34 +576,33 @@ function StatsTab({ stats }: { stats: any }) {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {statGroups.map((group, idx) => (
         <motion.div
           key={idx}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ delay: idx * 0.1 }}
-          className={`bg-gradient-to-r ${group.bgGradient} rounded-xl p-5 border-2 ${group.borderColor} shadow-lg`}
+          className={`bg-gradient-to-r ${group.bgGradient} rounded-xl p-6 border-2 ${group.borderColor} shadow-lg`}
         >
           <div className="flex items-center space-x-3 mb-4">
-            <group.icon className={`${group.color} text-2xl`} />
-            <h3 className="font-bold text-white text-lg">{group.title}</h3>
+            <group.icon className={`${group.color} text-3xl`} />
+            <h3 className="font-bold text-white text-xl">{group.title}</h3>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
             {group.stats.map((stat, statIdx) => (
-              <motion.div 
+              <div 
                 key={statIdx} 
-                whileHover={{ scale: 1.02 }}
                 className="flex items-center justify-between bg-dark-900/50 rounded-lg p-3 border border-dark-700"
               >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-3">
                   {stat.icon}
-                  <span className="text-sm text-gray-400">{stat.label}</span>
+                  <span className="text-sm text-gray-300">{stat.label}</span>
                 </div>
                 <span className="font-bold text-white text-lg">
                   {typeof stat.value === 'string' ? stat.value : stat.value.toLocaleString()}
                 </span>
-              </motion.div>
+              </div>
             ))}
           </div>
         </motion.div>
@@ -486,175 +611,7 @@ function StatsTab({ stats }: { stats: any }) {
   );
 }
 
-// frontend/src/components/CharacterViewer.tsx (actualización de EquipmentTab)
-
-function EquipmentTab({ equipment }: { equipment: any[] }) {
-  const slots: { [key: number]: string } = {
-    0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
-    5: 'Waist', 6: 'Legs', 7: 'Feet', 8: 'Wrists', 9: 'Hands',
-    10: 'Finger 1', 11: 'Finger 2', 12: 'Trinket 1', 13: 'Trinket 2',
-    14: 'Back', 15: 'Main Hand', 16: 'Off Hand', 17: 'Ranged', 18: 'Tabard',
-  };
-
-  useEffect(() => {
-    console.log('📊 [EQUIPMENT TAB] Equipment data:', equipment);
-    equipment?.forEach((item, idx) => {
-      console.log(`  Item ${idx}:`, {
-        slot: item.slot,
-        name: item.name,
-        gems: item.enchantmentsParsed?.gems,
-        gemsData: item.gemsData,
-        enchant: item.enchantmentsParsed?.permanent,
-        enchantData: item.enchantmentData
-      });
-    });
-  }, [equipment]);
-
-  return (
-    <div className="grid grid-cols-1 gap-2">
-      {Object.entries(slots).map(([slotId, slotName]) => {
-        const item = equipment.find((eq) => eq.slot === parseInt(slotId));
-        
-        return (
-          <motion.div
-            key={slotId}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.02, x: 4 }}
-            className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/50 transition-all"
-          >
-            <span className="text-sm font-medium text-gray-400 min-w-[100px]">
-              {slotName}
-            </span>
-            
-            {item ? (
-              <div className="flex items-center space-x-3 flex-1">
-                <ItemIcon
-                  icon={item.icon}
-                  name={item.name}
-                  quality={item.quality}
-                  size="small"
-                />
-                
-                <ItemTooltip
-                  itemId={item.itemEntry}
-                  enchantId={item.enchantmentsParsed?.permanent}
-                  gems={item.enchantmentsParsed?.gems}
-                  className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
-                >
-                  {item.name}
-                </ItemTooltip>
-                
-                {/* ✅ Indicadores con datos reales */}
-                <div className="flex items-center space-x-1 flex-shrink-0">
-                  {/* Gemas con datos completos */}
-                  {item.gemsData?.length > 0 ? (
-                    item.gemsData.map((gemData: any, idx: number) => (
-                      <GemIndicator 
-                        key={`gem-${item.slot}-${idx}`}
-                        gemSpellId={item.enchantmentsParsed.gems[idx]}
-                        gemData={gemData}
-                        index={idx}
-                      />
-                    ))
-                  ) : null}
-                  
-                  {/* Enchantment con datos completos */}
-                  {item.enchantmentData && (
-                    <EnchantIndicator 
-                      enchantSpellId={item.enchantmentsParsed.permanent}
-                      enchantData={item.enchantmentData}
-                    />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <span className="text-xs text-gray-600 italic">Empty</span>
-            )}
-          </motion.div>
-        );
-      })}
-    </div>
-  );
-}
-
-// frontend/src/components/CharacterViewer.tsx (actualización de GemIndicator)
-
-interface GemData {
-  id: number;
-  name: string;
-  stats: string[];
-  description: string;
-}
-
-function GemIndicator({ 
-  gemSpellId,
-  gemData,
-  index
-}: { 
-  gemSpellId: number;
-  gemData?: GemData | null;
-  index: number;
-}) {
-  console.log(`💎 [GEM] Rendering gem ${index + 1}:`, { gemSpellId, gemData });
-
-  if (!gemSpellId || gemSpellId === 0) {
-    console.warn(`⚠️ [GEM] Invalid gem ID at index ${index}:`, gemSpellId);
-    return null;
-  }
-
-  // Si tenemos datos de la gema, usar ManualTooltip
-  if (gemData && gemData.stats && gemData.stats.length > 0) {
-    return (
-      <ManualTooltip
-        title={gemData.name || `Gem ${gemSpellId}`}
-        stats={gemData.stats}
-        description={gemData.description}
-        type="gem"
-      >
-        <div className="relative group">
-          <div 
-            className={`
-              w-5 h-5 rounded-full border-2 cursor-pointer
-              transition-all duration-200
-              hover:scale-125 hover:shadow-lg hover:shadow-purple-500/50
-              ${getGemColor(index)}
-            `}
-          >
-            <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
-          </div>
-        </div>
-      </ManualTooltip>
-    );
-  }
-
-  // Fallback: usar EnchantmentTooltip de WotLKDB
-  return (
-    <EnchantmentTooltip 
-      enchantmentId={gemSpellId} 
-      type="gem"
-      className="inline-block"
-    >
-      <div className="relative group">
-        <div 
-          className={`
-            w-5 h-5 rounded-full border-2 cursor-pointer
-            transition-all duration-200
-            hover:scale-125 hover:shadow-lg
-            ${getGemColor(index)}
-          `}
-          title={`Gem Slot ${index + 1} (ID: ${gemSpellId})`}
-        >
-          <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
-        </div>
-        
-        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
-          Gem ID: {gemSpellId}
-        </div>
-      </div>
-    </EnchantmentTooltip>
-  );
-}
+// ==================== ACHIEVEMENTS TAB ====================
 
 function AchievementsTab({ achievements }: { achievements: any[] }) {
   if (achievements.length === 0) {
@@ -668,30 +625,29 @@ function AchievementsTab({ achievements }: { achievements: any[] }) {
   }
 
   return (
-    <div className="space-y-2">
-      {achievements.slice(0, 20).map((achievement, idx) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {achievements.slice(0, 30).map((achievement, idx) => (
         <motion.div
           key={idx}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: idx * 0.02 }}
-          whileHover={{ scale: 1.02, x: 4 }}
-          className="flex items-center space-x-3 bg-dark-700/50 rounded-lg p-4 border border-dark-600 hover:border-wow-gold/30 transition-all shadow-md"
+          whileHover={{ scale: 1.05, y: -2 }}
+          className="flex items-center space-x-3 bg-gradient-to-br from-dark-800 to-dark-700 rounded-lg p-4 border-2 border-dark-600 hover:border-wow-gold/30 transition-all shadow-md"
         >
-          <div className="w-12 h-12 bg-gradient-to-br from-wow-gold to-yellow-600 rounded-lg flex items-center justify-center shadow-lg">
+          <div className="w-12 h-12 bg-gradient-to-br from-wow-gold to-yellow-600 rounded-lg flex items-center justify-center shadow-lg flex-shrink-0">
             <FaTrophy className="text-dark-900 text-xl" />
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-bold text-white">Achievement #{achievement.achievement}</p>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white truncate">Achievement #{achievement.achievement}</p>
             <p className="text-xs text-gray-500">
-              Completed: {new Date(achievement.date * 1000).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+              {new Date(achievement.date * 1000).toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                year: 'numeric'
               })}
             </p>
           </div>
-          <FaStar className="text-wow-gold text-lg" />
         </motion.div>
       ))}
     </div>
