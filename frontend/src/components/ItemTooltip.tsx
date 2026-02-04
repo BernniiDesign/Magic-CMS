@@ -1,108 +1,87 @@
 // frontend/src/components/ItemTooltip.tsx
 
 import { useEffect } from 'react';
-import wotlkdbService from '../services/wotlkdb.service';
 
 interface ItemTooltipProps {
   itemId: number;
-  enchantItemId?: number;    // ✅ AHORA ES ITEM ID (no enchantment ID)
-  gemItemIds?: number[];     // ✅ AHORA ES ARRAY DE ITEM IDs (no enchantment IDs)
+  enchantItemId?: number;
+  gemItemIds?: number[];
+  prismaticItemId?: number;
   randomProperty?: number;
   children?: React.ReactNode;
   className?: string;
 }
 
 /**
- * ✅ COMPONENTE ACTUALIZADO - USA ITEM IDs EN VEZ DE ENCHANTMENT IDs
- * 
- * WotLKDB tooltip parameters:
- * - item=ID           → Item principal
- * - ench=ITEM_ID      → Item del enchantment (ej: item=38373 = Executioner scroll)
- * - gems=ID1:ID2:ID3  → Items de las gemas (ej: item=40136 = Balanced Dreadstone)
- * - rand=X            → Random suffix/property
+ * ✅ COMPONENTE FINAL - USA ITEM IDS RESUELTOS
  */
 export function ItemTooltip({ 
   itemId, 
   enchantItemId, 
-  gemItemIds = [], 
+  gemItemIds = [],
+  prismaticItemId,
   randomProperty,
   children,
-  className 
+  className = ''
 }: ItemTooltipProps) {
+  
   useEffect(() => {
-    try {
-      wotlkdbService.injectTooltipScript();
-      console.log('✅ [ItemTooltip] WotLKDB script loaded');
-      setTimeout(() => {
-        wotlkdbService.refreshTooltips();
-      }, 100);
-    } catch (err) {
-      console.error('❌ [ItemTooltip] Script failed:', err);
+    // Inyectar script de WotLKDB
+    if (!document.querySelector('script[src*="wotlkdb.com"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://wotlkdb.com/static/widgets/power.js?locale=es';
+      script.async = true;
+      document.head.appendChild(script);
     }
-  }, [itemId, enchantItemId, gemItemIds, randomProperty]);
+
+    // Refrescar tooltips después de cargar
+    const timer = setTimeout(() => {
+      if ((window as any).$WowheadPower) {
+        (window as any).$WowheadPower.refreshLinks();
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [itemId, enchantItemId, gemItemIds, prismaticItemId, randomProperty]);
 
   /**
-   * ✅ CONSTRUCCIÓN DE URL USANDO ITEM IDs
+   * ✅ CONSTRUCCIÓN DE URL CORRECTA
    */
-  const buildWotLKDBUrl = (): string => {
-    const params = new URLSearchParams();
-    params.set('item', itemId.toString());
+  const buildURL = (): string => {
+    const params: string[] = [`item=${itemId}`];
     
-    // Enchantment (ahora es item ID del enchant)
     if (enchantItemId && enchantItemId > 0) {
-      params.set('ench', enchantItemId.toString());
+      params.push(`ench=${enchantItemId}`);
     }
     
-    // Gemas (ahora son item IDs de las gemas)
-    if (gemItemIds && gemItemIds.length > 0) {
-      const validGems = gemItemIds.filter(g => g && g > 0);
+    const validGems = gemItemIds.filter(g => g && g > 0);
+    if (validGems.length > 0) {
+      params.push(`gems=${validGems.join(':')}`);
+    }
+
+    if (prismaticItemId && prismaticItemId > 0) {
+      // En WotLKDB, prismatic va como gem extra
       if (validGems.length > 0) {
-        params.set('gems', validGems.join(':'));
+        params[params.length - 1] = `gems=${[...validGems, prismaticItemId].join(':')}`;
+      } else {
+        params.push(`gems=${prismaticItemId}`);
       }
     }
     
-    // Random property/suffix
     if (randomProperty && randomProperty !== 0) {
-      params.set('rand', randomProperty.toString());
+      params.push(`rand=${randomProperty}`);
     }
 
-    return `https://wotlkdb.com/?${params.toString()}`;
-  };
-
-  /**
-   * ✅ DATA ATTRIBUTES USANDO ITEM IDs
-   */
-  const buildDataAttributes = () => {
-    const attrs: Record<string, string> = {
-      'data-wotlkdb': 'item',
-      'data-wotlkdb-id': itemId.toString(),
-    };
-
-    if (enchantItemId && enchantItemId > 0) {
-      attrs['data-wotlkdb-ench'] = enchantItemId.toString();
-    }
-
-    if (gemItemIds && gemItemIds.length > 0) {
-      const validGems = gemItemIds.filter(g => g && g > 0);
-      if (validGems.length > 0) {
-        attrs['data-wotlkdb-gems'] = validGems.join(':');
-      }
-    }
-
-    if (randomProperty && randomProperty !== 0) {
-      attrs['data-wotlkdb-rand'] = randomProperty.toString();
-    }
-
-    return attrs;
+    return `https://wotlkdb.com/?${params.join('&')}`;
   };
 
   return (
     <a 
-      href={buildWotLKDBUrl()}
+      href={buildURL()}
       className={className}
       target="_blank"
       rel="noopener noreferrer"
-      {...buildDataAttributes()}
+      data-wowhead={`item=${itemId}${enchantItemId ? `&ench=${enchantItemId}` : ''}${gemItemIds.length ? `&gems=${gemItemIds.join(':')}` : ''}`}
     >
       {children || `Item ${itemId}`}
     </a>

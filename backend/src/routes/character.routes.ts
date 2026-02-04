@@ -3,7 +3,7 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthRequest, optionalAuth } from '../middleware/auth.middleware';
 import characterService from '../services/character.service';
-import itemService from '../services/item.service';
+import wotlkdbResolver from '../services/wotlkdb-resolver.service';
 
 const router = Router();
 
@@ -53,6 +53,10 @@ router.get('/account/:accountId', authenticateToken, async (req: AuthRequest, re
 });
 
 
+/**
+ * ✅ GET /api/characters/:guid/details
+ * CORREGIDO: Tipado explícito en map()
+ */
 router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const guid = parseInt(req.params.guid, 10);
@@ -63,14 +67,12 @@ router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Re
       return;
     }
 
-    // Verificar propiedad
     const isOwner = await characterService.verifyCharacterOwnership(guid, userId);
     if (!isOwner) {
       res.status(403).json({ success: false, message: 'Forbidden' });
       return;
     }
 
-    // Obtener datos base del personaje
     const character = await characterService.getCharacterDetails(guid);
 
     if (!character) {
@@ -78,32 +80,12 @@ router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Re
       return;
     }
 
-    // ✅ ENRIQUECER EQUIPMENT CON WOTLKDB
     if (character.equipment && character.equipment.length > 0) {
-      console.log(`🔍 [CHARACTER] Procesando ${character.equipment.length} items...`);
+      console.log(`🔍 [CHARACTER API] Procesando ${character.equipment.length} items...`);
 
-      // 1. Parsear enchantments de todos los items
-      const parsedItems = await Promise.all(
-        character.equipment.map(async (item: any) => {
-          const itemInstance = await itemService.getItemInstance(item.item);
-          
-          if (!itemInstance) return item;
-
-          const parsed = itemService.parseEnchantments(itemInstance.enchantments);
-          
-          return {
-            ...item,
-            itemEntry: itemInstance.itemEntry,
-            enchantmentsParsed: parsed,
-            randomProperty: itemInstance.randomPropertyId,
-          };
-        })
-      );
-
-      // 2. Recolectar TODOS los enchantment IDs únicos
       const allEnchantmentIds = new Set<number>();
       
-      parsedItems.forEach((item: any) => {
+      character.equipment.forEach((item: any) => {
         if (item.enchantmentsParsed) {
           if (item.enchantmentsParsed.permanent) {
             allEnchantmentIds.add(item.enchantmentsParsed.permanent);
@@ -111,38 +93,44 @@ router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Re
           item.enchantmentsParsed.gems?.forEach((gemId: number) => {
             allEnchantmentIds.add(gemId);
           });
+          if (item.enchantmentsParsed.prismatic) {
+            allEnchantmentIds.add(item.enchantmentsParsed.prismatic);
+          }
         }
       });
 
-      console.log(`🔍 [CHARACTER] Resolviendo ${allEnchantmentIds.size} enchantments con WotLKDB...`);
+      console.log(`🔍 [CHARACTER API] Resolviendo ${allEnchantmentIds.size} enchantments únicos`);
 
-      // 3. Resolver todos los enchantments a item IDs usando WotLKDB
-      const resolutions = await wotlkdbResolver.resolveMultiple(Array.from(allEnchantmentIds));
+      const resolutions = await wotlkdbResolver.resolveMultiple(
+        Array.from(allEnchantmentIds)
+      );
       
-      // Crear mapa para lookup rápido
       const resolutionMap = new Map(
         resolutions.map(r => [r.enchantmentId, r])
       );
 
-      console.log(`✅ [CHARACTER] Resueltos ${resolutions.filter(r => r.itemId).length}/${resolutions.length} enchantments`);
+      const resolvedCount = resolutions.filter(r => r.itemId).length;
+      console.log(`✅ [CHARACTER API] Resueltos ${resolvedCount}/${resolutions.length}`);
 
-      // 4. Enriquecer cada item con los datos resueltos
-      character.equipment = parsedItems.map((item: any) => {
+      // ✅ FIX: Tipado explícito del parámetro g
+      character.equipment = character.equipment.map((item: any) => {
         if (!item.enchantmentsParsed) return item;
 
-        // Resolver enchantment permanente
         const enchantResolution = item.enchantmentsParsed.permanent
           ? resolutionMap.get(item.enchantmentsParsed.permanent)
           : null;
 
-        // Resolver gemas
-        const gemsResolutions = item.enchantmentsParsed.gems?.map((gemId: number) => 
-          resolutionMap.get(gemId)
-        ).filter(Boolean) || [];
+        // ✅ CORRECCIÓN: Tipado explícito en map
+        const gemsResolutions = (item.enchantmentsParsed.gems || [])
+          .map((gemId: number) => resolutionMap.get(gemId))
+          .filter((g: null | undefined): g is NonNullable<typeof g> => g !== null && g !== undefined);
+
+        const prismaticResolution = item.enchantmentsParsed.prismatic
+          ? resolutionMap.get(item.enchantmentsParsed.prismatic)
+          : null;
 
         return {
           ...item,
-          // ✅ Datos del enchantment (con item ID resuelto)
           enchantData: enchantResolution ? {
             enchantmentId: enchantResolution.enchantmentId,
             itemId: enchantResolution.itemId,
@@ -150,23 +138,29 @@ router.get('/:guid/details', authenticateToken, async (req: AuthRequest, res: Re
             type: enchantResolution.type,
           } : null,
           
-          // ✅ Datos de las gemas (con item IDs resueltos)
-          gemsData: gemsResolutions.map(g => ({
-            enchantmentId: g!.enchantmentId,
-            itemId: g!.itemId,
-            name: g!.name,
-            type: g!.type,
+          gemsData: gemsResolutions.map((g: { enchantmentId: any; itemId: any; name: any; type: any; }) => ({
+            enchantmentId: g.enchantmentId,
+            itemId: g.itemId,
+            name: g.name,
+            type: g.type,
           })),
+
+          prismaticData: prismaticResolution ? {
+            enchantmentId: prismaticResolution.enchantmentId,
+            itemId: prismaticResolution.itemId,
+            name: prismaticResolution.name,
+            type: prismaticResolution.type,
+          } : null,
         };
       });
 
-      console.log('✅ [CHARACTER] Equipment enriquecido completamente');
+      console.log('✅ [CHARACTER API] Equipment completamente enriquecido');
     }
 
     res.json({ success: true, character });
     
   } catch (error) {
-    console.error('❌ [CHARACTER DETAILS] Error:', error);
+    console.error('❌ [CHARACTER API] Error:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });

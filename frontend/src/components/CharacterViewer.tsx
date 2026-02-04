@@ -26,6 +26,21 @@ interface CharacterViewerProps {
   characterGuid: number;
 }
 
+// ✅ HELPER FUNCTION: Quality to CSS Class
+function getQualityTextClass(quality: number): string {
+  const qualityClasses: { [key: number]: string } = {
+    0: 'text-gray-500',      // Poor
+    1: 'text-white',         // Common
+    2: 'text-green-400',     // Uncommon
+    3: 'text-blue-400',      // Rare
+    4: 'text-purple-400',    // Epic
+    5: 'text-orange-400',    // Legendary
+    6: 'text-yellow-400',    // Artifact
+    7: 'text-cyan-400',      // Heirloom
+  };
+  return qualityClasses[quality] || 'text-white';
+}
+
 export default function CharacterViewer({ isOpen, onClose, characterGuid }: CharacterViewerProps) {
   const [character, setCharacter] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -112,7 +127,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
           onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-[1400px] max-h-[95vh] overflow-hidden bg-gradient-to-br from-dark-900 via-dark-800 to-dark-900 rounded-2xl border-2 border-wow-gold/40 shadow-2xl shadow-wow-gold/20"
         >
-          {/* Header decorativo */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-wow-gold to-transparent" />
           
           <motion.button
@@ -136,10 +150,8 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
             </div>
           ) : character ? (
             <div className="overflow-y-auto max-h-[95vh]">
-              {/* HEADER DEL PERSONAJE */}
               <CharacterHeader character={character} classInfo={classInfo} raceInfo={raceInfo} />
 
-              {/* TABS */}
               <div className="px-8 py-4 border-b border-dark-600">
                 <div className="flex space-x-2">
                   {(['equipment', 'stats', 'achievements'] as const).map((tab) => (
@@ -167,7 +179,6 @@ export default function CharacterViewer({ isOpen, onClose, characterGuid }: Char
                 </div>
               </div>
 
-              {/* CONTENIDO */}
               <div className="p-8">
                 {activeTab === 'equipment' && (
                   <ModernEquipmentView equipment={character.equipment || []} />
@@ -204,7 +215,6 @@ function CharacterHeader({ character, classInfo, raceInfo }: any) {
   return (
     <div className="relative bg-gradient-to-r from-dark-900 via-dark-800 to-dark-900 p-8 border-b border-dark-600">
       <div className="flex items-center justify-between">
-        {/* Left: Character Info */}
         <div className="flex items-center space-x-6">
           <div className="relative">
             <img
@@ -248,7 +258,6 @@ function CharacterHeader({ character, classInfo, raceInfo }: any) {
           </div>
         </div>
 
-        {/* Right: Quick Stats */}
         <div className="grid grid-cols-3 gap-4">
           <QuickStatCard
             icon={<FaTrophy className="text-wow-gold" />}
@@ -295,12 +304,11 @@ function QuickStatCard({ icon, label, value, color }: any) {
 // ==================== MODERN EQUIPMENT VIEW ====================
 
 function ModernEquipmentView({ equipment }: { equipment: any[] }) {
-  const leftSlots = [0, 1, 2, 14, 4, 8, 9, 5]; // Head, Neck, Shoulders, Back, Chest, Wrists, Hands, Waist
-  const rightSlots = [6, 7, 10, 11, 12, 13, 15, 16, 17]; // Legs, Feet, Finger1, Finger2, Trinket1, Trinket2, Main, Off, Ranged
+  const leftSlots = [0, 1, 2, 14, 4, 8, 9, 5];
+  const rightSlots = [6, 7, 10, 11, 12, 13, 15, 16, 17];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      {/* LEFT COLUMN */}
       <div className="space-y-2">
         {leftSlots.map((slotId) => {
           const item = equipment.find((eq) => eq.slot === slotId);
@@ -308,7 +316,6 @@ function ModernEquipmentView({ equipment }: { equipment: any[] }) {
         })}
       </div>
 
-      {/* CENTER: CHARACTER MODEL */}
       <div className="flex items-center justify-center">
         <div className="relative w-full aspect-square max-w-sm">
           <div className="absolute inset-0 bg-gradient-to-br from-dark-800 to-dark-700 rounded-2xl border-2 border-dark-600 overflow-hidden">
@@ -322,7 +329,6 @@ function ModernEquipmentView({ equipment }: { equipment: any[] }) {
             </div>
           </div>
           
-          {/* Decorative corners */}
           <div className="absolute top-0 left-0 w-12 h-12 border-t-2 border-l-2 border-wow-gold/50"></div>
           <div className="absolute top-0 right-0 w-12 h-12 border-t-2 border-r-2 border-wow-gold/50"></div>
           <div className="absolute bottom-0 left-0 w-12 h-12 border-b-2 border-l-2 border-wow-gold/50"></div>
@@ -330,7 +336,6 @@ function ModernEquipmentView({ equipment }: { equipment: any[] }) {
         </div>
       </div>
 
-      {/* RIGHT COLUMN */}
       <div className="space-y-2">
         {rightSlots.map((slotId) => {
           const item = equipment.find((eq) => eq.slot === slotId);
@@ -341,190 +346,50 @@ function ModernEquipmentView({ equipment }: { equipment: any[] }) {
   );
 }
 
-/**
- * EquipmentSlot component for displaying a single equipment slot and its item.
- */
+// ✅ EQUIPMENT SLOT - CORREGIDO
 function EquipmentSlot({ slotId, item }: { slotId: number; item: any }) {
-  // You can customize the slot label or icon here if needed
-  return (
-    <div className="flex items-center space-x-2 bg-dark-700/40 rounded-lg p-2 border border-dark-600 min-h-[48px]">
-      <span className="text-xs text-gray-500 min-w-[60px]">{`Slot ${slotId}`}</span>
-      {item ? (
-        <div className="flex items-center space-x-2">
-          <ItemIcon icon={item.icon} name={item.name} quality={item.quality} size="small" />
-          <ItemTooltip
-            itemId={item.itemEntry}
-            enchantItemId={item.enchantData?.itemId}
-            gemItemIds={item.gemsData?.map((g: any) => g.itemId).filter(Boolean)}
-            randomProperty={item.randomProperty}
-            className="text-xs font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate"
-          >
-            {item.name}
-          </ItemTooltip>
-        </div>
-      ) : (
-        <span className="text-xs text-gray-600 italic">Empty</span>
-      )}
-    </div>
-  );
-}
-
-/**
- * ✅ EQUIPMENT TAB - USA ITEM IDS RESUELTOS DESDE BACKEND
- */
-function EquipmentTab({ equipment }: { equipment: any[] }) {
-  const slots: { [key: number]: string } = {
-    0: 'Head', 1: 'Neck', 2: 'Shoulders', 3: 'Shirt', 4: 'Chest',
-    5: 'Waist', 6: 'Legs', 7: 'Feet', 8: 'Wrists', 9: 'Hands',
-    10: 'Finger 1', 11: 'Finger 2', 12: 'Trinket 1', 13: 'Trinket 2',
-    14: 'Back', 15: 'Main Hand', 16: 'Off Hand', 17: 'Ranged', 18: 'Tabard',
-  };
-
-  useEffect(() => {
-    console.log('📊 [EQUIPMENT TAB] Data recibida:', equipment);
-    equipment?.forEach((item, idx) => {
-      console.log(`  Item ${idx}:`, {
-        slot: item.slot,
-        name: item.name,
-        enchantData: item.enchantData,
-        gemsData: item.gemsData,
-      });
-    });
-  }, [equipment]);
+  if (!item) {
+    return (
+      <div className="flex items-center space-x-2 bg-dark-700/40 rounded-lg p-2">
+        <span className="text-xs text-gray-600 italic">Empty Slot {slotId}</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 gap-2">
-      {Object.entries(slots).map(([slotId, slotName]) => {
-        const item = equipment.find((eq) => eq.slot === parseInt(slotId));
+    <div className="flex items-center space-x-2 bg-dark-700/40 rounded-lg p-2 border border-dark-600">
+      <ItemIcon icon={item.icon} name={item.name} quality={item.quality} size="small" />
+      
+      <ItemTooltip
+        itemId={item.itemEntry}
+        enchantItemId={item.enchantData?.itemId}
+        gemItemIds={item.gemsData?.map((g: any) => g.itemId).filter(Boolean)}
+        prismaticItemId={item.prismaticData?.itemId}
+        randomProperty={item.randomProperty}
+        className={`text-xs font-medium hover:text-wow-ice transition-colors flex-1 truncate ${getQualityTextClass(item.quality)}`}
+      >
+        {item.name}
+      </ItemTooltip>
+
+      <div className="flex items-center space-x-1">
+        {item.gemsData?.map((gem: any, idx: number) => (
+          gem.itemId && (
+            <ItemTooltip key={idx} itemId={gem.itemId} className="inline-block">
+              <div className="w-4 h-4 rounded-full bg-purple-600 border border-purple-400" 
+                   title={gem.name} />
+            </ItemTooltip>
+          )
+        ))}
         
-        function getQualityTextClass(quality: any) {
-          throw new Error('Function not implemented.');
-        }
-
-        return (
-          <motion.div
-            key={slotId}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            whileHover={{ scale: 1.02, x: 4 }}
-            className="flex items-center justify-between bg-dark-700/50 rounded-lg p-3 border border-dark-600 hover:border-wow-gold/50 transition-all"
-          >
-            <span className="text-sm font-medium text-gray-400 min-w-[100px]">
-              {slotName}
-            </span>
-            
-            {item ? (
-              <div className="flex items-center space-x-3 flex-1">
-                <ItemIcon
-                  icon={item.icon}
-                  name={item.name}
-                  quality={item.quality}
-                  size="small"
-                />
-                
-                {/* ✅ TOOLTIP DEL ITEM CON ITEM IDS RESUELTOS */}
-                <ItemTooltip
-                  itemId={item.itemEntry}
-                  enchantItemId={item.enchantData?.itemId}  // ✅ Item ID del enchant
-                  gemItemIds={item.gemsData?.map((g: any) => g.itemId).filter(Boolean)} // ✅ Array de item IDs de gemas
-                  randomProperty={item.randomProperty}
-                  className={`text-sm font-medium hover:text-wow-ice transition-colors flex-1 min-w-0 truncate ${getQualityTextClass(item.quality)}`}
-                >
-                  {item.name}
-                </ItemTooltip>
-                
-                {/* ✅ INDICADORES VISUALES */}
-                <div className="flex items-center space-x-1 flex-shrink-0">
-                  {/* Mostrar gemas con tooltips individuales */}
-                  {item.gemsData?.map((gem: any, idx: number) => (
-                    gem.itemId && (
-                      <GemIndicator 
-                        key={`gem-${item.slot}-${idx}`}
-                        gemItemId={gem.itemId}  // ✅ Item ID de la gema
-                        gemName={gem.name}
-                        index={idx}
-                      />
-                    )
-                  ))}
-                  
-                  {/* Mostrar enchant con tooltip */}
-                  {item.enchantData?.itemId && (
-                    <EnchantIndicator 
-                      enchantItemId={item.enchantData.itemId}  // ✅ Item ID del enchant
-                      enchantName={item.enchantData.name}
-                    />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <span className="text-xs text-gray-600 italic">Empty</span>
-            )}
-          </motion.div>
-        );
-      })}
+        {item.enchantData?.itemId && (
+          <ItemTooltip itemId={item.enchantData.itemId} className="inline-block">
+            <div className="px-1 py-0.5 bg-green-600/30 border border-green-500 rounded text-xs">
+              ✨
+            </div>
+          </ItemTooltip>
+        )}
+      </div>
     </div>
-  );
-}
-
-/**
- * ✅ INDICADOR DE GEMA - USA ITEM ID
- */
-function GemIndicator({ 
-  gemItemId,
-  gemName,
-  index
-}: { 
-  gemItemId: number;
-  gemName: string;
-  index: number;
-}) {
-  const getGemColor = (idx: number) => {
-    const colors = [
-      'border-red-500 bg-red-900/50 hover:bg-red-800/70',
-      'border-blue-500 bg-blue-900/50 hover:bg-blue-800/70',
-      'border-yellow-500 bg-yellow-900/50 hover:bg-yellow-800/70',
-    ];
-    return colors[idx] || 'border-purple-500 bg-purple-900/50 hover:bg-purple-800/70';
-  };
-
-  return (
-    <ItemTooltip itemId={gemItemId} className="inline-block">
-      <div className="relative group">
-        <div 
-          className={`
-            w-5 h-5 rounded-full border-2 cursor-pointer
-            transition-all duration-200
-            hover:scale-125 hover:shadow-lg
-            ${getGemColor(index)}
-          `}
-          title={gemName}
-        >
-          <div className="absolute inset-0.5 rounded-full bg-gradient-to-br from-white/30 to-transparent" />
-        </div>
-      </div>
-    </ItemTooltip>
-  );
-}
-
-/**
- * ✅ INDICADOR DE ENCHANT - USA ITEM ID
- */
-function EnchantIndicator({ 
-  enchantItemId,
-  enchantName
-}: { 
-  enchantItemId: number;
-  enchantName: string;
-}) {
-  return (
-    <ItemTooltip itemId={enchantItemId} className="inline-block">
-      <div className="relative group px-2 py-0.5 bg-green-900/30 border border-green-600/50 rounded text-xs text-green-400 hover:bg-green-800/50 transition-colors cursor-help">
-        <FaBolt className="inline w-3 h-3" />
-        <div className="absolute hidden group-hover:block bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-wow-gold text-xs whitespace-nowrap rounded z-10 pointer-events-none">
-          {enchantName}
-        </div>
-      </div>
-    </ItemTooltip>
   );
 }
 
