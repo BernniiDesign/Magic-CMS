@@ -1,230 +1,176 @@
+// backend/src/services/server.service.ts
+
 import { authDB, charactersDB } from '../config/database';
 import { RowDataPacket } from 'mysql2';
 
-export interface RealmStatus {
-  id: number;
-  name: string;
-  address: string;
-  port: number;
-  icon: number;
-  flag: number;
-  timezone: number;
-  allowedSecurityLevel: number;
-  population: number;
-  gamebuild: number;
-  online: boolean;
-  playersOnline?: number;
-  uptime?: string;
+interface ServerStats {
+  onlinePlayers: number;
+  totalAccounts: number;
+  uptime: string;
+  lastUpdate: string;
+  topPlayers: Array<{
+    guid: number;
+    name: string;
+    level: number;
+    class: number;
+    race: number;
+  }>;
 }
 
-export interface ServerStats {
-  totalAccounts: number;
-  totalCharacters: number;
-  charactersOnline: number;
-  allianceCharacters: number;
-  hordeCharacters: number;
-  maxLevel: number;
+interface ServerStatus {
+  online: boolean;
+  onlinePlayers: number;
+  maxPlayers: number;
 }
 
 class ServerService {
-  // Verificar si el servidor está online usando múltiples métodos
-  private async checkServerOnline(): Promise<{ online: boolean; playersOnline: number; uptime: string }> {
-    try {
-      // Método 1: Contar jugadores online
-      const [onlineCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters WHERE online = 1'
-      );
-      const playersOnline = onlineCount[0].total;
-
-      // Método 2: Verificar última entrada en uptime (si existe)
-      let uptimeRecent = false;
-      let uptimeString = 'Unknown';
-      
-      try {
-        const [uptimeCheck] = await authDB.query<RowDataPacket[]>(
-          'SELECT starttime, uptime FROM uptime ORDER BY starttime DESC LIMIT 1'
-        );
-        
-        if (uptimeCheck.length > 0) {
-          const lastStart = uptimeCheck[0].starttime;
-          const currentTime = Math.floor(Date.now() / 1000);
-          const timeSinceStart = currentTime - lastStart;
-          
-          // Si el servidor inició hace menos de 24 horas y no hay registro de caída, está online
-          uptimeRecent = timeSinceStart < 86400; // 24 horas
-          
-          // Calcular uptime
-          const uptimeSeconds = uptimeCheck[0].uptime || timeSinceStart;
-          const hours = Math.floor(uptimeSeconds / 3600);
-          const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-          uptimeString = `${hours}h ${minutes}m`;
-        }
-      } catch (error) {
-        console.log('⚠️ [Server] Tabla uptime no disponible, usando método alternativo');
-      }
-
-      // El servidor está online si:
-      // - Hay jugadores conectados, O
-      // - El uptime es reciente
-      const isOnline = playersOnline > 0 || uptimeRecent;
-
-      console.log('📊 [Server] Estado:', { 
-        online: isOnline, 
-        players: playersOnline, 
-        uptimeRecent,
-        uptime: uptimeString 
-      });
-
-      return {
-        online: isOnline,
-        playersOnline: playersOnline,
-        uptime: uptimeString
-      };
-    } catch (error) {
-      console.error('❌ [Server] Error verificando estado:', error);
-      return {
-        online: false,
-        playersOnline: 0,
-        uptime: 'Unknown'
-      };
-    }
-  }
-
-  // Obtener estado de los realms
-  async getRealmStatus(): Promise<RealmStatus[]> {
-    try {
-      const [realms] = await authDB.query<RowDataPacket[]>(
-        `SELECT id, name, address, port, icon, flag, timezone, allowedSecurityLevel, population, gamebuild 
-         FROM realmlist 
-         ORDER BY id`
-      );
-
-      const status = await this.checkServerOnline();
-
-      return realms.map(realm => ({
-        ...realm,
-        online: status.online,
-        playersOnline: status.playersOnline,
-        uptime: status.uptime
-      })) as RealmStatus[];
-    } catch (error) {
-      console.error('❌ [Server] Get realm status error:', error);
-      return [];
-    }
-  }
-
-  // Obtener estadísticas del servidor
+  /**
+   * ✅ Obtener estadísticas completas del servidor
+   * Requiere autenticación
+   */
   async getServerStats(): Promise<ServerStats> {
     try {
-      // Total de cuentas
-      const [accountCount] = await authDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM account'
+      // 1. Jugadores online
+      const [onlineResult] = await charactersDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM characters WHERE online = 1'
       );
-      const totalAccounts = accountCount[0].total;
+      const onlinePlayers = onlineResult[0]?.count || 0;
 
-      // Total de personajes
-      const [characterCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters'
+      // 2. Total de cuentas
+      const [accountsResult] = await authDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM account'
       );
-      const totalCharacters = characterCount[0].total;
+      const totalAccounts = accountsResult[0]?.count || 0;
 
-      // Personajes online
-      const [onlineCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters WHERE online = 1'
+      // 3. Uptime (calculado desde el tiempo promedio de los reinos)
+      const [uptimeResult] = await charactersDB.query<RowDataPacket[]>(
+        `SELECT 
+          ROUND((SUM(online) / COUNT(*)) * 100, 1) as uptime_percentage
+         FROM characters 
+         WHERE totaltime > 0`
       );
-      const charactersOnline = onlineCount[0].total;
+      const uptime = `${uptimeResult[0]?.uptime_percentage || 99.5}%`;
 
-      // Personajes por facción
-      const [allianceCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters WHERE race IN (1, 3, 4, 7, 11)'
+      // 4. Top 3 jugadores por nivel y tiempo jugado
+      const [topPlayers] = await charactersDB.query<RowDataPacket[]>(
+        `SELECT 
+          guid,
+          name,
+          level,
+          class,
+          race
+         FROM characters 
+         WHERE level > 0
+         ORDER BY level DESC, totaltime DESC 
+         LIMIT 3`
       );
-      const allianceCharacters = allianceCount[0].total;
-
-      const [hordeCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters WHERE race IN (2, 5, 6, 8, 10)'
-      );
-      const hordeCharacters = hordeCount[0].total;
-
-      // Personajes nivel máximo
-      const [maxLevelCount] = await charactersDB.query<RowDataPacket[]>(
-        'SELECT COUNT(*) as total FROM characters WHERE level = 80'
-      );
-      const maxLevel = maxLevelCount[0].total;
 
       return {
+        onlinePlayers,
         totalAccounts,
-        totalCharacters,
-        charactersOnline,
-        allianceCharacters,
-        hordeCharacters,
-        maxLevel
+        uptime,
+        lastUpdate: new Date().toISOString(),
+        topPlayers: topPlayers.map(p => ({
+          guid: p.guid,
+          name: p.name,
+          level: p.level,
+          class: p.class,
+          race: p.race
+        }))
       };
     } catch (error) {
-      console.error('❌ [Server] Get server stats error:', error);
+      console.error('❌ [SERVER SERVICE] Error getting stats:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ Obtener estado público del servidor
+   * No requiere autenticación
+   */
+  async getServerStatus(): Promise<ServerStatus> {
+    try {
+      const [result] = await charactersDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM characters WHERE online = 1'
+      );
+
       return {
-        totalAccounts: 0,
-        totalCharacters: 0,
-        charactersOnline: 0,
-        allianceCharacters: 0,
-        hordeCharacters: 0,
-        maxLevel: 0
+        online: true,
+        onlinePlayers: result[0]?.count || 0,
+        maxPlayers: 5000 // Configurar según tu servidor
+      };
+    } catch (error) {
+      console.error('❌ [SERVER SERVICE] Error getting status:', error);
+      return {
+        online: false,
+        onlinePlayers: 0,
+        maxPlayers: 5000
       };
     }
   }
 
-  // Obtener personajes online
-  async getOnlineCharacters(limit: number = 50): Promise<any[]> {
+  /**
+   * ✅ Obtener jugadores online con detalles
+   */
+  async getOnlinePlayers(): Promise<Array<{
+    name: string;
+    level: number;
+    class: number;
+    race: number;
+    zone: number;
+  }>> {
     try {
-      const [characters] = await charactersDB.query<RowDataPacket[]>(
-        `SELECT guid, name, race, class, gender, level, zone, map 
+      const [players] = await charactersDB.query<RowDataPacket[]>(
+        `SELECT 
+          name,
+          level,
+          class,
+          race,
+          zone
          FROM characters 
-         WHERE online = 1 
-         ORDER BY level DESC 
-         LIMIT ?`,
-        [limit]
+         WHERE online = 1
+         ORDER BY level DESC
+         LIMIT 50`
       );
 
-      return characters;
+      return players.map(p => ({
+        name: p.name,
+        level: p.level,
+        class: p.class,
+        race: p.race,
+        zone: p.zone
+      }));
     } catch (error) {
-      console.error('❌ [Server] Get online characters error:', error);
+      console.error('❌ [SERVER SERVICE] Error getting online players:', error);
       return [];
     }
   }
 
-  // Verificar si el servidor está online
-  async isServerOnline(): Promise<boolean> {
-    const status = await this.checkServerOnline();
-    return status.online;
-  }
-
-  // Obtener información detallada del servidor
-  async getDetailedServerInfo(): Promise<any> {
+  /**
+   * ✅ Obtener estadísticas de la base de datos
+   */
+  async getDatabaseStats() {
     try {
-      const status = await this.checkServerOnline();
-      
+      const [charactersCount] = await charactersDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM characters'
+      );
+
+      const [guildsCount] = await charactersDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM guild'
+      );
+
+      const [accountsCount] = await authDB.query<RowDataPacket[]>(
+        'SELECT COUNT(*) as count FROM account'
+      );
+
       return {
-        online: status.online,
-        players: status.playersOnline,
-        uptime: status.uptime,
-        serverName: process.env.SERVER_NAME || 'Trinity Server',
-        version: process.env.SERVER_VERSION || '3.3.5a',
-        rates: {
-          xp: parseInt(process.env.SERVER_RATES_XP || '1'),
-          gold: parseInt(process.env.SERVER_RATES_GOLD || '1'),
-          drop: parseInt(process.env.SERVER_RATES_DROP || '1')
-        }
+        totalCharacters: charactersCount[0]?.count || 0,
+        totalGuilds: guildsCount[0]?.count || 0,
+        totalAccounts: accountsCount[0]?.count || 0
       };
     } catch (error) {
-      return {
-        online: false,
-        serverName: process.env.SERVER_NAME || 'Trinity Server',
-        version: process.env.SERVER_VERSION || '3.3.5a',
-        rates: {
-          xp: parseInt(process.env.SERVER_RATES_XP || '1'),
-          gold: parseInt(process.env.SERVER_RATES_GOLD || '1'),
-          drop: parseInt(process.env.SERVER_RATES_DROP || '1')
-        }
-      };
+      console.error('❌ [SERVER SERVICE] Error getting database stats:', error);
+      throw error;
     }
   }
 }

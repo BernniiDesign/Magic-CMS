@@ -21,9 +21,7 @@ export function ItemTooltip({
   gemItemIds = [],
   prismaticItemId,
   randomProperty,
-  children,
-  className = ''
-}: ItemTooltipProps) {
+  children}: ItemTooltipProps) {
   
   useEffect(() => {
     // Inyectar script de WotLKDB
@@ -50,25 +48,23 @@ export function ItemTooltip({
   const buildURL = (): string => {
     const params: string[] = [`item=${itemId}`];
     
-    if (enchantItemId && enchantItemId > 0) {
+    // Enchant permanente
+    if (enchantItemId) {
       params.push(`ench=${enchantItemId}`);
     }
     
-    const validGems = gemItemIds.filter(g => g && g > 0);
+    // Gemas (filtrar nulls)
+    const validGems = gemItemIds.filter(id => id > 0);
     if (validGems.length > 0) {
       params.push(`gems=${validGems.join(':')}`);
     }
-
-    if (prismaticItemId && prismaticItemId > 0) {
-      // En WotLKDB, prismatic va como gem extra
-      if (validGems.length > 0) {
-        params[params.length - 1] = `gems=${[...validGems, prismaticItemId].join(':')}`;
-      } else {
-        params.push(`gems=${prismaticItemId}`);
-      }
+    
+    // Prismatic gem
+    if (prismaticItemId) {
+      params.push(`prismatic=${prismaticItemId}`);
     }
     
-    if (randomProperty && randomProperty !== 0) {
+    if (randomProperty) {
       params.push(`rand=${randomProperty}`);
     }
 
@@ -78,12 +74,10 @@ export function ItemTooltip({
   return (
     <a 
       href={buildURL()}
-      className={className}
-      target="_blank"
+      data-wowhead={`item=${itemId}`}
       rel="noopener noreferrer"
-      data-wowhead={`item=${itemId}${enchantItemId ? `&ench=${enchantItemId}` : ''}${gemItemIds.length ? `&gems=${gemItemIds.join(':')}` : ''}`}
     >
-      {children || `Item ${itemId}`}
+      {children}
     </a>
   );
 }

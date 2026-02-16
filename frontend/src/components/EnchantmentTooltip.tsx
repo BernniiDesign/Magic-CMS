@@ -10,6 +10,12 @@ interface EnchantmentTooltipProps {
   className?: string;
 }
 
+/**
+ * ✅ COMPONENTE PARA TOOLTIPS DE ENCHANTMENTS/GEMAS
+ * 
+ * Usa enchantment IDs directamente (no item IDs)
+ * WotLKDB renderiza el tooltip automáticamente con data-wotlkdb="enchantment"
+ */
 export function EnchantmentTooltip({ 
   enchantmentId, 
   type = 'enchant',
@@ -18,22 +24,20 @@ export function EnchantmentTooltip({
 }: EnchantmentTooltipProps) {
   
   useEffect(() => {
-    // ✅ Inyectar script al montar (si no está ya)
     wotlkdbService.injectTooltipScript()
       .then(() => {
-        // ✅ Refrescar tooltips después de 100ms
         setTimeout(() => {
           wotlkdbService.refreshTooltips();
         }, 100);
       })
-      .catch(err => console.error('❌ Tooltip script failed:', err));
+      .catch((err: Error) => console.error('❌ [EnchantmentTooltip] Script failed:', err));
   }, [enchantmentId]);
 
+  /**
+   * ✅ URL para enchantments/gemas
+   * Formato: https://wotlkdb.com/?enchantment=3539
+   */
   const buildEnchantmentURL = (): string => {
-    // ✅ URL correcta según tipo
-    if (type === 'gem' || type === 'prismatic') {
-      return `https://wotlkdb.com/?enchantment=${enchantmentId}`;
-    }
     return `https://wotlkdb.com/?enchantment=${enchantmentId}`;
   };
 
@@ -43,10 +47,10 @@ export function EnchantmentTooltip({
       className={className}
       target="_blank"
       rel="noopener noreferrer"
-      // ✅ CRÍTICO: Atributos data-wotlkdb para tooltips
+      // ✅ CRÍTICO: data-wotlkdb para enchantments
       data-wotlkdb="enchantment"
       data-wotlkdb-id={enchantmentId}
-      data-wotlkdb-domain="es"  // ✅ Forzar dominio español
+      data-wotlkdb-domain="es"
     >
       {children || `Enchantment ${enchantmentId}`}
     </a>

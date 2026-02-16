@@ -2,8 +2,10 @@
 
 import { charactersDB } from '../config/database';
 import { RowDataPacket } from 'mysql2';
-import itemService from './item.service'; // ✅ IMPORTACIÓN FALTANTE
+import itemService from './item.service';
+import wotlkdbResolver from './wotlkdb-resolver.service'; // ✅ AÑADIDO
 
+// ✅ INTERFACES
 export interface Character {
   guid: number;
   name: string;
@@ -45,7 +47,6 @@ export interface CharacterStats {
   parryPct: number;
 }
 
-// ✅ INTERFAZ ACTUALIZADA CON TODOS LOS CAMPOS
 export interface CharacterEquipment {
   slot: number;
   item: number;
@@ -56,8 +57,26 @@ export interface CharacterEquipment {
   name: string;
   quality: number;
   displayid: number;
-  icon: string;              // Ya no es nullable, siempre tendrá valor
+  icon: string;
   enchantmentsParsed: any;
+  enchantData?: {
+    enchantmentId: number;
+    itemId: number | null;
+    name: string;
+    type: string;
+  } | null;
+  gemsData?: Array<{
+    enchantmentId: number;
+    itemId: number | null;
+    name: string;
+    type: string;
+  }>;
+  prismaticData?: {
+    enchantmentId: number;
+    itemId: number | null;
+    name: string;
+    type: string;
+  } | null;
 }
 
 export interface Achievement {
@@ -65,11 +84,17 @@ export interface Achievement {
   date: number;
 }
 
-class CharacterService {
-  // ... (otros métodos sin cambios)
+// ✅ INTERFACE LOCAL
+interface EnchantmentResolution {
+  enchantmentId: number;
+  itemId: number | null;
+  name: string;
+  type: 'gem' | 'enchant' | 'unknown';
+}
 
+class CharacterService {
   /**
-   * Obtener equipo del personaje con iconos y enchantments parseados
+   * Obtener equipo del personaje con iconos y enchantments resueltos
    */
   async getCharacterEquipment(guid: number): Promise<CharacterEquipment[]> {
     try {
@@ -77,39 +102,72 @@ class CharacterService {
         `SELECT 
           ci.slot,
           ci.item,
-          ci.item as guid,
           ii.itemEntry,
           ii.enchantments,
           ii.randomPropertyId,
           it.name,
           it.Quality as quality,
-          -- ✅ Traer icono directamente de item_icon (solo una tabla)
           COALESCE(ic.icon, 'inv_misc_questionmark') as icon
-         FROM character_inventory ci
-         INNER JOIN item_instance ii ON ci.item = ii.guid
-         INNER JOIN world.item_template it ON ii.itemEntry = it.entry
-         LEFT JOIN characters.item_icon ic ON ii.itemEntry = ic.entry
-         WHERE ci.guid = ? AND ci.slot < 19
-         ORDER BY ci.slot`,
+        FROM character_inventory ci
+        INNER JOIN item_instance ii ON ci.item = ii.guid
+        INNER JOIN world.item_template it ON ii.itemEntry = it.entry
+        LEFT JOIN item_icon ic ON ii.itemEntry = ic.entry
+        WHERE ci.guid = ? AND ci.slot < 19
+        ORDER BY ci.slot`,
         [guid]
       );
 
-      return equipment.map((item: RowDataPacket) => ({
-        slot: item.slot,
-        item: item.item,
-        guid: item.guid,
-        itemEntry: item.itemEntry,
-        enchantments: item.enchantments,
-        randomPropertyId: item.randomPropertyId,
-        name: item.name,
-        quality: item.quality,
-        displayid: 0, // Ya no necesario, pero mantener para compatibilidad
-        // ✅ Icono viene directo de la query, agregar .jpg si falta
-        icon: item.icon.toLowerCase().endsWith('.jpg') 
-          ? item.icon 
-          : `${item.icon}.jpg`,
-        enchantmentsParsed: itemService.parseEnchantments(item.enchantments)
-      })) as CharacterEquipment[];
+      const enriched = await Promise.all(
+        equipment.map(async (item: RowDataPacket) => {
+          const parsed = itemService.parseEnchantments(item.enchantments as string);
+          
+          // Resolver TODOS los enchantment IDs a item IDs
+          const [permanentResolution, gemsResolutions, prismaticResolution] = await Promise.all([
+            parsed.permanent ? wotlkdbResolver.resolveEnchantment(parsed.permanent) : null,
+            Promise.all(parsed.gems.map(id => wotlkdbResolver.resolveEnchantment(id))),
+            parsed.prismatic ? wotlkdbResolver.resolveEnchantment(parsed.prismatic) : null,
+          ]);
+
+          return {
+            slot: item.slot as number,
+            item: item.item as number,
+            guid: item.item as number,
+            itemEntry: item.itemEntry as number,
+            enchantments: item.enchantments as string,
+            randomPropertyId: item.randomPropertyId as number,
+            name: item.name as string,
+            quality: item.quality as number,
+            displayid: 0,
+            icon: (item.icon as string).toLowerCase().endsWith('.jpg') 
+              ? item.icon as string
+              : `${item.icon}.jpg`,
+            enchantmentsParsed: parsed,
+            
+            enchantData: permanentResolution ? {
+              enchantmentId: permanentResolution.enchantmentId,
+              itemId: permanentResolution.itemId,
+              name: permanentResolution.name,
+              type: permanentResolution.type,
+            } : null,
+            
+            gemsData: gemsResolutions.map((g: EnchantmentResolution) => ({
+              enchantmentId: g.enchantmentId,
+              itemId: g.itemId,
+              name: g.name,
+              type: g.type,
+            })),
+            
+            prismaticData: prismaticResolution ? {
+              enchantmentId: prismaticResolution.enchantmentId,
+              itemId: prismaticResolution.itemId,
+              name: prismaticResolution.name,
+              type: prismaticResolution.type,
+            } : null,
+          };
+        })
+      );
+
+      return enriched as CharacterEquipment[];
       
     } catch (error) {
       console.error('❌ [CHARACTERS] Error obteniendo equipo:', error);
@@ -117,9 +175,6 @@ class CharacterService {
     }
   }
 
-  /**
-   * Obtener estadísticas del personaje
-   */
   async getCharacterStats(guid: number): Promise<CharacterStats | null> {
     try {
       const [stats] = await charactersDB.query<RowDataPacket[]>(
@@ -138,9 +193,6 @@ class CharacterService {
     }
   }
 
-  /**
-   * Obtener logros del personaje
-   */
   async getCharacterAchievements(guid: number): Promise<Achievement[]> {
     try {
       const [achievements] = await charactersDB.query<RowDataPacket[]>(
@@ -159,9 +211,6 @@ class CharacterService {
     }
   }
 
-  /**
-   * Obtener personajes de una cuenta
-   */
   async getAccountCharacters(accountId: number): Promise<Character[]> {
     try {
       console.log('📝 [CHARACTERS] Obteniendo personajes para cuenta ID:', accountId);
@@ -185,14 +234,10 @@ class CharacterService {
     }
   }
 
-  /**
-   * Obtener un personaje con detalles completos
-   */
   async getCharacterDetails(guid: number): Promise<any | null> {
     try {
       console.log('📝 [CHARACTERS] Obteniendo detalles del personaje GUID:', guid);
       
-      // Datos básicos del personaje
       const [characters] = await charactersDB.query<RowDataPacket[]>(
         `SELECT * FROM characters WHERE guid = ?`,
         [guid]
@@ -203,14 +248,8 @@ class CharacterService {
       }
 
       const character = characters[0];
-
-      // Obtener estadísticas
       const stats = await this.getCharacterStats(guid);
-
-      // Obtener equipo (ya incluye parsing de enchantments)
       const equipment = await this.getCharacterEquipment(guid);
-
-      // Obtener logros
       const achievements = await this.getCharacterAchievements(guid);
 
       return {
@@ -225,9 +264,6 @@ class CharacterService {
     }
   }
 
-  /**
-   * Verificar si un personaje pertenece a una cuenta
-   */
   async verifyCharacterOwnership(guid: number, accountId: number): Promise<boolean> {
     try {
       const [characters] = await charactersDB.query<RowDataPacket[]>(
@@ -245,9 +281,6 @@ class CharacterService {
     }
   }
 
-  /**
-   * Obtener top personajes por nivel
-   */
   async getTopCharacters(limit: number = 100): Promise<Character[]> {
     try {
       console.log('🏆 [CHARACTERS] Obteniendo top', limit, 'personajes');

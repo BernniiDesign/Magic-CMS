@@ -2,7 +2,6 @@
 
 import axios, { AxiosInstance } from 'axios';
 import * as cheerio from 'cheerio';
-// ✅ FIX: Removido import no utilizado 'createHash'
 
 interface CacheEntry {
   itemId: number | null;
@@ -105,6 +104,40 @@ class WotLKDBResolverService {
     }
   }
 
+  /**
+   * ✅ FIX: Método que faltaba - Obtener desde caché persistente
+   */
+  private async getFromPersistentCache(
+    enchantmentId: number
+  ): Promise<EnchantmentResolution | null> {
+    try {
+      const { authDB } = await import('../config/database');
+      
+      const [rows]: any = await authDB.execute(`
+        SELECT enchantment_id, item_id, name, type
+        FROM wotlkdb_cache
+        WHERE enchantment_id = ?
+          AND updated_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+        LIMIT 1
+      `, [enchantmentId]);
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const row = rows[0];
+      return {
+        enchantmentId: row.enchantment_id,
+        itemId: row.item_id,
+        name: row.name,
+        type: row.type,
+      };
+    } catch (error) {
+      console.error('❌ [WotLKDB] Error leyendo caché persistente:', error);
+      return null;
+    }
+  }
+
   private async saveToPersistentCache(
     enchantmentId: number,
     resolution: EnchantmentResolution
@@ -164,29 +197,50 @@ class WotLKDBResolverService {
       };
     }
 
+    // 1. Check memory cache
     const cached = this.cache.get(enchantmentId);
     if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
-      console.log(`✅ [WotLKDB] Cache HIT para enchantment ${enchantmentId}`);
-      return {
-        enchantmentId,
-        itemId: cached.itemId,
-        name: cached.name,
-        type: cached.type,
-      };
+      // ✅ CRÍTICO: Re-scrape si itemId es null
+      if (cached.itemId === null) {
+        console.warn(`⚠️ [WotLKDB] Cache tiene itemId=null para ${enchantmentId}, re-scraping...`);
+        this.cache.delete(enchantmentId);
+      } else {
+        console.log(`✅ [WotLKDB] Cache HIT para enchantment ${enchantmentId} → Item ${cached.itemId}`);
+        return {
+          enchantmentId,
+          itemId: cached.itemId,
+          name: cached.name,
+          type: cached.type,
+        };
+      }
     }
 
+    // 2. Check DB cache (solo si no está en memoria o es inválido)
+    const dbCached = await this.getFromPersistentCache(enchantmentId);
+    if (dbCached && dbCached.itemId !== null) {
+      // Hidratar memoria
+      this.cache.set(enchantmentId, {
+        itemId: dbCached.itemId,
+        name: dbCached.name,
+        type: dbCached.type,
+        timestamp: Date.now(),
+        ttl: this.CACHE_TTL,
+      });
+      return dbCached;
+    }
+
+    // 3. Queue scraping si no está en cache válido
     const inFlight = this.inFlightRequests.get(enchantmentId);
     if (inFlight) {
       console.log(`⏳ [WotLKDB] Request ya en proceso para ${enchantmentId}`);
       return inFlight;
     }
 
-    // ✅ FIX: Solo usamos resolve (reject se maneja internamente)
     const promise = new Promise<EnchantmentResolution>((resolve) => {
       this.requestQueue.push({
         enchantmentId,
         resolve,
-        reject: () => {}, // Placeholder, no se usa pero requerido por la interfaz
+        reject: () => {},
         retries: 0,
       });
     });
@@ -236,6 +290,7 @@ class WotLKDBResolverService {
         headers: {
           'User-Agent': this.getRandomUserAgent(),
           'Referer': 'https://wotlkdb.com/',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
         },
       });
 
@@ -250,6 +305,7 @@ class WotLKDBResolverService {
       let name = '';
       let type: 'gem' | 'enchant' | 'unknown' = 'unknown';
 
+      // ========== ESTRATEGIA 1: Links directos a items ==========
       $('a[href*="?item="]').each((_, element) => {
         const href = $(element).attr('href');
         const text = $(element).text().trim();
@@ -261,24 +317,74 @@ class WotLKDBResolverService {
             name = text;
             
             const className = $(element).attr('class') || '';
-            type = className.includes('q') ? 'gem' : 'enchant';
+            if (className.match(/\bq\d/)) {
+              type = 'gem';
+            } else {
+              type = 'enchant';
+            }
+            
+            console.log(`✅ [WotLKDB] Estrategia 1: ${enchantmentId} → Item ${itemId} (${name}) [${type}]`);
           }
         }
       });
 
+      // ========== ESTRATEGIA 2: JavaScript g_items array ==========
       if (!itemId) {
-        const scriptContent = $('script:not([src])').text();
-        const itemMatch = scriptContent.match(/g_items\[(\d+)\]/);
+        const scripts = $('script:not([src])').toArray();
         
-        if (itemMatch) {
-          itemId = parseInt(itemMatch[1], 10);
-          type = 'gem';
+        for (const script of scripts) {
+          const scriptContent = $(script).html() || '';
           
-          const nameMatch = scriptContent.match(new RegExp(
-            `"name_enus"\\s*:\\s*"([^"]+)"`
-          ));
-          name = nameMatch ? nameMatch[1] : `Enchantment ${enchantmentId}`;
+          const itemMatch = scriptContent.match(/g_(?:items|gems)\[(\d+)\]/);
+          
+          if (itemMatch) {
+            itemId = parseInt(itemMatch[1], 10);
+            type = 'gem';
+            
+            const nameMatch = scriptContent.match(
+              new RegExp(`"name_enus"\\s*:\\s*"([^"]+)"`)
+            );
+            name = nameMatch ? nameMatch[1] : `Gem ${itemId}`;
+            
+            console.log(`✅ [WotLKDB] Estrategia 2: ${enchantmentId} → Item ${itemId} (${name}) [JS]`);
+            break;
+          }
         }
+      }
+
+      // ========== ESTRATEGIA 3: Meta tags ==========
+      if (!itemId) {
+        const ogTitle = $('meta[property="og:title"]').attr('content');
+        if (ogTitle) {
+          const itemMatch = ogTitle.match(/Item\s+(\d+)/i);
+          if (itemMatch) {
+            itemId = parseInt(itemMatch[1], 10);
+            name = ogTitle.split('-')[0].trim();
+            type = 'enchant';
+            
+            console.log(`✅ [WotLKDB] Estrategia 3: ${enchantmentId} → Item ${itemId} (${name}) [Meta]`);
+          }
+        }
+      }
+
+      // ========== DEBUG: Guardar HTML si falló ==========
+      if (!itemId && process.env.NODE_ENV === 'development') {
+        console.error(`❌ [WotLKDB] No se pudo extraer itemId de enchantment ${enchantmentId}`);
+        
+        const fs = require('fs');
+        const path = require('path');
+        const debugPath = path.join(__dirname, '../../debug');
+        
+        if (!fs.existsSync(debugPath)) {
+          fs.mkdirSync(debugPath, { recursive: true });
+        }
+        
+        fs.writeFileSync(
+          path.join(debugPath, `wotlkdb-${enchantmentId}.html`),
+          response.data,
+          'utf-8'
+        );
+        console.log(`📝 [WotLKDB] HTML guardado en debug/wotlkdb-${enchantmentId}.html`);
       }
 
       const result: EnchantmentResolution = {
@@ -288,12 +394,13 @@ class WotLKDBResolverService {
         type,
       };
 
+      // Guardar en cache
       this.cache.set(enchantmentId, {
         itemId,
         name: result.name,
         type,
         timestamp: Date.now(),
-        ttl: this.CACHE_TTL,
+        ttl: itemId ? this.CACHE_TTL : 60000, // Cache corto si falló
       });
 
       await this.saveToPersistentCache(enchantmentId, result);
