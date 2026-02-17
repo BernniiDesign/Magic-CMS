@@ -10,7 +10,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true, // CRÍTICO: Enviar cookies
+  withCredentials: true,
 });
 
 // ==================== REQUEST INTERCEPTOR ====================
@@ -18,9 +18,9 @@ const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = useAuthStore.getState().accessToken;
-    
+
     console.log('📤 [API] Request:', config.method?.toUpperCase(), config.url);
-    
+
     if (token) {
       if (token.split('.').length === 3) {
         config.headers.Authorization = `Bearer ${token}`;
@@ -32,7 +32,7 @@ api.interceptors.request.use(
     } else {
       console.warn('⚠️ [API] No hay token disponible');
     }
-    
+
     return config;
   },
   (error) => {
@@ -68,15 +68,13 @@ api.interceptors.response.use(
     console.log('❌ [API] Response error:', {
       status: error.response?.status,
       url: originalRequest?.url,
-      message: error.response?.data?.message
+      message: error.response?.data?.message,
     });
 
-    // Si no es 401, rechazar inmediatamente
     if (error.response?.status !== 401) {
       return Promise.reject(error);
     }
 
-    // Si ya reintentamos, rechazar
     if (originalRequest._retry) {
       console.error('❌ [API] Refresh ya intentado, redirigiendo a login');
       useAuthStore.getState().logout();
@@ -84,13 +82,13 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Si estamos en login/register, no intentar refresh
-    if (originalRequest.url?.includes('/auth/login') || 
-        originalRequest.url?.includes('/auth/register')) {
+    if (
+      originalRequest.url?.includes('/auth/login') ||
+      originalRequest.url?.includes('/auth/register')
+    ) {
       return Promise.reject(error);
     }
 
-    // Si ya estamos refrescando, agregar a cola
     if (isRefreshing) {
       console.log('⏳ [API] Refresh en progreso, agregando a cola');
       return new Promise((resolve, reject) => {
@@ -102,9 +100,7 @@ api.interceptors.response.use(
           }
           return api(originalRequest);
         })
-        .catch((err) => {
-          return Promise.reject(err);
-        });
+        .catch((err) => Promise.reject(err));
     }
 
     originalRequest._retry = true;
@@ -113,12 +109,8 @@ api.interceptors.response.use(
     console.log('🔄 [API] Intentando refresh token...');
 
     try {
-      // CRÍTICO: Usar endpoint correcto sin body
       const response = await api.post('/auth/refresh', undefined, {
-        // Evitar loop infinito
-        headers: {
-          ...originalRequest.headers,
-        },
+        headers: { ...originalRequest.headers },
         _retry: true,
       } as any);
 
@@ -130,28 +122,20 @@ api.interceptors.response.use(
         throw new Error('Invalid refresh token received');
       }
 
-      // Actualizar store
       useAuthStore.getState().updateAccessToken(accessToken);
 
-      // Actualizar header de request original
       if (originalRequest.headers) {
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
       }
 
-      // Procesar cola
       processQueue(null, accessToken);
-
-      // Reintentar request original
       return api(originalRequest);
 
     } catch (refreshError: any) {
       console.error('❌ [API] Refresh token falló:', refreshError);
-      
       processQueue(refreshError, null);
       useAuthStore.getState().logout();
-      
       window.location.href = '/login';
-      
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;
@@ -164,40 +148,80 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (data: { username: string; password: string; email: string }) =>
     api.post('/auth/register', data),
-  
+
   login: (data: { username: string; password: string }) =>
     api.post('/auth/login', data),
-  
+
   logout: () =>
     api.post('/auth/logout'),
-  
+
   logoutAll: () =>
     api.post('/auth/logout-all'),
-  
+
   refreshToken: () =>
     api.post('/auth/refresh'),
-  
+
   getMe: () =>
     api.get('/auth/me'),
 };
 
 export const serverAPI = {
-  getStatus: () => api.get('/server/status'),
-  getStats: () => api.get('/server/stats'),
+  getStatus: () =>
+    api.get('/server/status'),
+
+  getStats: () =>
+    api.get('/server/stats'),
+
+  // ← NUEVO: usado por CommunitySidebar
+  getTopKillers: (limit = 5) =>
+    api.get(`/server/top-killers?limit=${limit}`),
 };
 
 export const charactersAPI = {
   getAccountCharacters: (accountId: number) =>
     api.get(`/characters/account/${accountId}`),
-  
+
   getCharacter: (guid: number) =>
     api.get(`/characters/${guid}`),
-  
+
   getCharacterDetails: (guid: number) =>
     api.get(`/characters/${guid}/details`),
-  
+
   getTopCharacters: (limit: number = 100) =>
     api.get(`/characters/top?limit=${limit}`),
+};
+
+// ← NUEVO: endpoints de comunidad (foros, noticias, devblog)
+export const communityAPI = {
+  // Foros
+  getForumCategories: () =>
+    api.get('/community/forums'),
+
+  getThreadsByCategory: (categoryId: number, page = 1) =>
+    api.get(`/community/forums/${categoryId}/threads?page=${page}`),
+
+  getThread: (threadId: number, page = 1) =>
+    api.get(`/community/forums/thread/${threadId}?page=${page}`),
+
+  createThread: (data: { categoryId: number; title: string; content: string }) =>
+    api.post('/community/forums/thread', data),
+
+  replyThread: (threadId: number, content: string) =>
+    api.post(`/community/forums/thread/${threadId}/reply`, { content }),
+
+  // Noticias
+  getNews: (page = 1) =>
+    api.get(`/community/news?page=${page}`),
+
+  getNewsPost: (slug: string) =>
+    api.get(`/community/news/${slug}`),
+
+  // DevBlog
+  getDevBlog: (page = 1) =>
+    api.get(`/community/devblog?page=${page}`),
+
+  getDevBlogPost: (slug: string) =>
+    api.get(`/community/devblog/${slug}`),
 };
 
 export default api;

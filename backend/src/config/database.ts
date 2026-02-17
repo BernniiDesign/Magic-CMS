@@ -1,64 +1,68 @@
+// backend/src/config/database.ts
+
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Auth Database Connection Pool
-export const authDB = mysql.createPool({
-  host: process.env.DB_AUTH_HOST || 'localhost',
-  port: parseInt(process.env.DB_AUTH_PORT || '3306'),
-  user: process.env.DB_AUTH_USER || 'trinity',
-  password: process.env.DB_AUTH_PASSWORD || 'trinity',
-  database: process.env.DB_AUTH_DATABASE || 'auth',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+// ============================================================
+// auth   → Cuentas TrinityCore (READ/WRITE limitado)
+// characters → Personajes TrinityCore (READ)
+// world  → Datos del mundo TrinityCore (READ)
+// cms    → Todo lo del CMS: foros, noticias, devblog, caché
+// ============================================================
 
-// Characters Database Connection Pool
-export const charactersDB = mysql.createPool({
-  host: process.env.DB_CHARACTERS_HOST || 'localhost',
-  port: parseInt(process.env.DB_CHARACTERS_PORT || '3306'),
-  user: process.env.DB_CHARACTERS_USER || 'trinity',
-  password: process.env.DB_CHARACTERS_PASSWORD || 'trinity',
-  database: process.env.DB_CHARACTERS_DATABASE || 'characters',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+function createPool(
+  db: string,
+  envPrefix: string,
+  readOnly = false
+) {
+  return mysql.createPool({
+    host:             process.env[`${envPrefix}_HOST`]     || process.env.DB_HOST     || '127.0.0.1',
+    port:   parseInt(process.env[`${envPrefix}_PORT`]     || process.env.DB_PORT     || '3306'),
+    user:             process.env[`${envPrefix}_USER`]     || process.env.DB_USER     || 'root',
+    password:         process.env[`${envPrefix}_PASSWORD`] || process.env.DB_PASSWORD || '',
+    database:         process.env[`${envPrefix}_NAME`]     || db,
+    waitForConnections: true,
+    connectionLimit:  parseInt(process.env[`${envPrefix}_POOL_SIZE`] || '10'),
+    queueLimit:       0,
+    timezone:         'Z',
+    charset:          'utf8mb4',
+    decimalNumbers:   true,
+  });
+}
 
-// World Database Connection Pool
-export const worldDB = mysql.createPool({
-  host: process.env.DB_WORLD_HOST || 'localhost',
-  port: parseInt(process.env.DB_WORLD_PORT || '3306'),
-  user: process.env.DB_WORLD_USER || 'trinity',
-  password: process.env.DB_WORLD_PASSWORD || 'trinity',
-  database: process.env.DB_WORLD_DATABASE || 'world',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+// TrinityCore: cuentas de jugadores
+export const authDB = createPool('auth', 'AUTH_DB');
 
-// Test database connections
-export const testConnections = async () => {
-  try {
-    await authDB.query('SELECT 1');
-    console.log('✅ Auth database connected');
-    
-    await charactersDB.query('SELECT 1');
-    console.log('✅ Characters database connected');
-    
-    await worldDB.query('SELECT 1');
-    console.log('✅ World database connected');
-  } catch (error) {
-    console.error('❌ Database connection error:', error);
-    throw error;
+// TrinityCore: personajes
+export const charactersDB = createPool('characters', 'CHARACTERS_DB', true);
+
+// TrinityCore: mundo
+export const worldDB = createPool('world', 'WORLD_DB', true);
+
+// CMS: foros, noticias, devblog, caché WotLKDB, etc.
+export const cmsDB = createPool('cms', 'CMS_DB');
+
+// ── Health check al arrancar ────────────────────────────────
+async function testConnections() {
+  const pools: [string, mysql.Pool][] = [
+    ['auth',       authDB],
+    ['characters', charactersDB],
+    ['world',      worldDB],
+    ['cms',        cmsDB],
+  ];
+
+  for (const [name, pool] of pools) {
+    try {
+      const conn = await pool.getConnection();
+      await conn.ping();
+      conn.release();
+      console.log(`✅ [DB] ${name} conectado`);
+    } catch (err: any) {
+      console.error(`❌ [DB] ${name} falló:`, err.message);
+    }
   }
-};
+}
 
-export default {
-  authDB,
-  charactersDB,
-  worldDB,
-  testConnections
-};
+testConnections();

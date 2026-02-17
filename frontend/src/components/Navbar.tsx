@@ -1,37 +1,61 @@
+// frontend/src/components/Navbar.tsx
+
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaHome, FaUser, FaGamepad, FaCrown, FaBars, FaTimes } from 'react-icons/fa';
+import {
+  FaHome, FaUser, FaGamepad, FaCrown, FaBars, FaTimes,
+  FaNewspaper, FaComments, FaCode, FaChevronDown
+} from 'react-icons/fa';
 import { useAuthStore } from '../store/authStore';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+
+const mainNav = [
+  { path: '/',          label: 'Inicio',    icon: FaHome,    publicRoute: true },
+  { path: '/dashboard', label: 'Dashboard', icon: FaGamepad, protected: true  },
+];
+
+const communityItems = [
+  { path: '/news',    label: 'Noticias', icon: FaNewspaper },
+  { path: '/devblog', label: 'Dev Blog', icon: FaCode      },
+  { path: '/forum',   label: 'Foros',    icon: FaComments  },
+];
 
 export default function Navbar() {
   const location = useLocation();
   const { isAuthenticated, user, logout } = useAuthStore();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileOpen,    setMobileOpen]    = useState(false);
+  const [dropdownOpen,  setDropdownOpen]  = useState(false);
+  const [mobileComOpen, setMobileComOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const navItems = [
-    { path: '/', label: 'Home', icon: FaHome, public: true },
-    { path: '/dashboard', label: 'Dashboard', icon: FaGamepad, protected: true },
-  ];
+  const isActive = (path: string) =>
+    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
-  const isActive = (path: string) => location.pathname === path;
+  const isCommunityActive = communityItems.some(i => isActive(i.path));
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
+        setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   return (
     <>
       <motion.nav
         initial={{ y: -100 }}
         animate={{ y: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 20 }}
         className="fixed top-0 left-0 right-0 z-50 bg-dark-900/95 backdrop-blur-md border-b border-wow-gold/20"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
+
             {/* Logo */}
             <Link to="/">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="flex items-center space-x-3"
-              >
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="flex items-center space-x-3">
                 <div className="relative">
                   <div className="absolute inset-0 bg-wow-gold/20 blur-xl rounded-full" />
                   <div className="relative w-10 h-10 bg-gradient-to-br from-wow-gold via-wow-blue to-wow-ice rounded-lg flex items-center justify-center">
@@ -44,40 +68,86 @@ export default function Navbar() {
               </motion.div>
             </Link>
 
-            {/* Desktop Navigation */}
+            {/* Desktop nav */}
             <div className="hidden md:flex items-center space-x-1">
-              {navItems.map((item) => {
+
+              {mainNav.map((item) => {
                 if (item.protected && !isAuthenticated) return null;
-                if (item.public || isAuthenticated) {
-                  return (
-                    <Link key={item.path} to={item.path}>
-                      <motion.div
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="relative px-4 py-2"
-                      >
-                        <div className="flex items-center space-x-2">
-                          <item.icon className={`text-lg ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-400'}`} />
-                          <span className={`font-medium ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-300 hover:text-white'} transition-colors`}>
-                            {item.label}
-                          </span>
-                        </div>
-                        {isActive(item.path) && (
-                          <motion.div
-                            layoutId="navbar-indicator"
-                            className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-wow-gold to-transparent"
-                            transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                          />
-                        )}
-                      </motion.div>
-                    </Link>
-                  );
-                }
-                return null;
+                return (
+                  <Link key={item.path} to={item.path}>
+                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="relative px-4 py-2">
+                      <div className="flex items-center space-x-2">
+                        <item.icon className={`text-lg ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-400'}`} />
+                        <span className={`font-medium transition-colors ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-300 hover:text-white'}`}>
+                          {item.label}
+                        </span>
+                      </div>
+                      {isActive(item.path) && (
+                        <motion.div layoutId="navbar-indicator"
+                          className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-wow-gold to-transparent"
+                          transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                        />
+                      )}
+                    </motion.div>
+                  </Link>
+                );
               })}
+
+              {/* Dropdown Comunidad */}
+              <div ref={dropdownRef} className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={() => setDropdownOpen(v => !v)}
+                  className="relative px-4 py-2 flex items-center space-x-2"
+                >
+                  <FaComments className={`text-lg ${isCommunityActive ? 'text-wow-gold' : 'text-gray-400'}`} />
+                  <span className={`font-medium transition-colors ${isCommunityActive ? 'text-wow-gold' : 'text-gray-300 hover:text-white'}`}>
+                    Comunidad
+                  </span>
+                  <motion.div animate={{ rotate: dropdownOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                    <FaChevronDown className="text-xs text-gray-500 ml-1" />
+                  </motion.div>
+                  {isCommunityActive && (
+                    <motion.div layoutId="navbar-indicator"
+                      className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-wow-gold to-transparent"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                </motion.button>
+
+                <AnimatePresence>
+                  {dropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full left-0 mt-2 w-48 bg-dark-800/98 backdrop-blur-md border border-wow-gold/20 rounded-xl shadow-2xl shadow-black/60 overflow-hidden"
+                    >
+                      {communityItems.map((item, idx) => (
+                        <Link key={item.path} to={item.path} onClick={() => setDropdownOpen(false)}>
+                          <motion.div
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className={`flex items-center space-x-3 px-4 py-3 hover:bg-wow-gold/10 transition-colors group ${
+                              isActive(item.path) ? 'bg-wow-gold/10 border-l-2 border-wow-gold' : ''
+                            }`}
+                          >
+                            <item.icon className={`text-sm ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-500 group-hover:text-wow-gold/70'} transition-colors`} />
+                            <span className={`text-sm font-medium ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-300 group-hover:text-white'} transition-colors`}>
+                              {item.label}
+                            </span>
+                          </motion.div>
+                        </Link>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
-            {/* User Section */}
+            {/* User section */}
             <div className="hidden md:flex items-center space-x-4">
               {isAuthenticated ? (
                 <>
@@ -87,9 +157,7 @@ export default function Navbar() {
                     </div>
                     <span className="text-sm font-medium text-gray-300">{user?.username}</span>
                   </div>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={logout}
                     className="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 hover:text-white rounded-lg border border-dark-600 hover:border-wow-gold/30 transition-all font-medium"
                   >
@@ -99,18 +167,14 @@ export default function Navbar() {
               ) : (
                 <>
                   <Link to="/login">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                       className="px-4 py-2 text-gray-300 hover:text-white font-medium transition-colors"
                     >
                       Sign In
                     </motion.button>
                   </Link>
                   <Link to="/register">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                    <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                       className="relative px-6 py-2 rounded-lg font-medium overflow-hidden group"
                     >
                       <div className="absolute inset-0 bg-gradient-to-r from-wow-gold to-wow-ice opacity-100 group-hover:opacity-90 transition-opacity" />
@@ -121,56 +185,82 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Mobile Menu Button */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            {/* Mobile button */}
+            <motion.button whileTap={{ scale: 0.9 }}
+              onClick={() => setMobileOpen(v => !v)}
               className="md:hidden p-2 text-gray-400 hover:text-white"
             >
-              {mobileMenuOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
+              {mobileOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
             </motion.button>
           </div>
         </div>
 
-        {/* Mobile Menu */}
+        {/* Mobile menu */}
         <AnimatePresence>
-          {mobileMenuOpen && (
+          {mobileOpen && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               className="md:hidden bg-dark-800/95 backdrop-blur-md border-t border-wow-gold/20"
             >
-              <div className="px-4 py-4 space-y-3">
-                {navItems.map((item) => {
+              <div className="px-4 py-4 space-y-2">
+
+                {mainNav.map((item) => {
                   if (item.protected && !isAuthenticated) return null;
-                  if (item.public || isAuthenticated) {
-                    return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setMobileMenuOpen(false)}
+                  return (
+                    <Link key={item.path} to={item.path} onClick={() => setMobileOpen(false)}>
+                      <motion.div whileHover={{ x: 4 }}
+                        className={`flex items-center space-x-3 px-4 py-3 rounded-lg ${isActive(item.path) ? 'bg-wow-gold/10 border border-wow-gold/30' : 'hover:bg-dark-700'}`}
                       >
-                        <motion.div
-                          whileHover={{ x: 4 }}
-                          className={`flex items-center space-x-3 px-4 py-3 rounded-lg ${
-                            isActive(item.path)
-                              ? 'bg-wow-gold/10 border border-wow-gold/30'
-                              : 'hover:bg-dark-700'
-                          }`}
-                        >
-                          <item.icon className={isActive(item.path) ? 'text-wow-gold' : 'text-gray-400'} />
-                          <span className={isActive(item.path) ? 'text-wow-gold font-medium' : 'text-gray-300'}>
-                            {item.label}
-                          </span>
-                        </motion.div>
-                      </Link>
-                    );
-                  }
-                  return null;
+                        <item.icon className={isActive(item.path) ? 'text-wow-gold' : 'text-gray-400'} />
+                        <span className={isActive(item.path) ? 'text-wow-gold font-medium' : 'text-gray-300'}>{item.label}</span>
+                      </motion.div>
+                    </Link>
+                  );
                 })}
 
-                <div className="border-t border-dark-700 pt-3 mt-3 space-y-2">
+                {/* Comunidad collapsible */}
+                <div>
+                  <button
+                    onClick={() => setMobileComOpen(v => !v)}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg ${isCommunityActive ? 'bg-wow-gold/10 border border-wow-gold/30' : 'hover:bg-dark-700'}`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <FaComments className={isCommunityActive ? 'text-wow-gold' : 'text-gray-400'} />
+                      <span className={isCommunityActive ? 'text-wow-gold font-medium' : 'text-gray-300'}>Comunidad</span>
+                    </div>
+                    <motion.div animate={{ rotate: mobileComOpen ? 180 : 0 }}>
+                      <FaChevronDown className="text-gray-500 text-xs" />
+                    </motion.div>
+                  </button>
+
+                  <AnimatePresence>
+                    {mobileComOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="ml-4 mt-1 space-y-1 border-l border-wow-gold/20 pl-3"
+                      >
+                        {communityItems.map((item) => (
+                          <Link key={item.path} to={item.path}
+                            onClick={() => { setMobileOpen(false); setMobileComOpen(false); }}
+                          >
+                            <motion.div whileHover={{ x: 4 }}
+                              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg ${isActive(item.path) ? 'bg-wow-gold/10' : 'hover:bg-dark-700'}`}
+                            >
+                              <item.icon className={`text-sm ${isActive(item.path) ? 'text-wow-gold' : 'text-gray-500'}`} />
+                              <span className={`text-sm ${isActive(item.path) ? 'text-wow-gold font-medium' : 'text-gray-400'}`}>{item.label}</span>
+                            </motion.div>
+                          </Link>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="border-t border-dark-700 pt-3 space-y-2">
                   {isAuthenticated ? (
                     <>
                       <div className="flex items-center space-x-3 px-4 py-2">
@@ -179,11 +269,7 @@ export default function Navbar() {
                         </div>
                         <span className="text-sm font-medium text-gray-300">{user?.username}</span>
                       </div>
-                      <button
-                        onClick={() => {
-                          logout();
-                          setMobileMenuOpen(false);
-                        }}
+                      <button onClick={() => { logout(); setMobileOpen(false); }}
                         className="w-full px-4 py-3 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors text-left"
                       >
                         Logout
@@ -191,15 +277,11 @@ export default function Navbar() {
                     </>
                   ) : (
                     <>
-                      <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                        <button className="w-full px-4 py-3 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">
-                          Sign In
-                        </button>
+                      <Link to="/login" onClick={() => setMobileOpen(false)}>
+                        <button className="w-full px-4 py-3 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Sign In</button>
                       </Link>
-                      <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
-                        <button className="w-full px-4 py-3 bg-gradient-to-r from-wow-gold to-wow-ice text-dark-900 font-semibold rounded-lg">
-                          Get Started
-                        </button>
+                      <Link to="/register" onClick={() => setMobileOpen(false)}>
+                        <button className="w-full px-4 py-3 bg-gradient-to-r from-wow-gold to-wow-ice text-dark-900 font-semibold rounded-lg">Get Started</button>
                       </Link>
                     </>
                   )}
@@ -209,8 +291,6 @@ export default function Navbar() {
           )}
         </AnimatePresence>
       </motion.nav>
-
-      {/* Spacer to prevent content from going under fixed navbar */}
       <div className="h-16" />
     </>
   );
