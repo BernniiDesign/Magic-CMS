@@ -5,6 +5,9 @@ import crypto from 'crypto';
 import { authDB } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
 
+// ✅ RBAC: fuente única de verdad — NO duplicar la lógica aquí
+import { getUserPermissions } from '../middleware/rbac.middleware';
+
 // ==================== TYPES & INTERFACES ====================
 
 interface RegisterData {
@@ -23,7 +26,7 @@ interface LoginResult {
     id: number;
     username: string;
     email: string;
-    permissions: number[];  // ← NUEVO
+    permissions: number[];
   };
 }
 
@@ -36,14 +39,14 @@ interface UserData {
   id: number;
   username: string;
   email: string;
-  permissions?: number[];  // ← NUEVO
+  permissions?: number[];
 }
 
 interface DecodedAccessToken {
   id: number;
   username: string;
   email: string;
-  permissions: number[];   // ← NUEVO
+  permissions: number[];
   type: 'access';
   iat: number;
   exp: number;
@@ -71,14 +74,10 @@ interface ServiceResponse {
 
 // ==================== CONSTANTS ====================
 
-const JWT_SECRET          = process.env.JWT_SECRET          || 'your-secret-key-change-this';
-const JWT_REFRESH_SECRET  = process.env.JWT_REFRESH_SECRET  || 'your-refresh-secret-change-this';
+const JWT_SECRET          = process.env.JWT_SECRET         || 'your-secret-key-change-this';
+const JWT_REFRESH_SECRET  = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-this';
 const ACCESS_TOKEN_EXPIRY  = '15m';
 const REFRESH_TOKEN_EXPIRY = '7d';
-
-// realmId: -1 = global (todos los reinos en TrinityCore)
-// Ajusta REALM_ID en .env si tu servidor usa un ID específico
-const REALM_ID = parseInt(process.env.REALM_ID || '-1');
 
 // ==================== SRP6 UTILITIES ====================
 
@@ -91,7 +90,7 @@ function bufferToBigIntLE(buffer: Buffer): bigint {
 }
 
 function bigIntToBufferLE(value: bigint, size: number = 32): Buffer {
-  const hex = value.toString(16).padStart(size * 2, '0');
+  const hex    = value.toString(16).padStart(size * 2, '0');
   const buffer = Buffer.from(hex, 'hex');
   const reversed = Buffer.alloc(buffer.length);
   for (let i = 0; i < buffer.length; i++) {
@@ -126,7 +125,7 @@ function calculateSRP6Verifier(username: string, password: string, salt: Buffer)
     .createHash('sha1')
     .update(Buffer.concat([salt, h1]))
     .digest();
-  const h2Int   = bufferToBigIntLE(h2);
+  const h2Int    = bufferToBigIntLE(h2);
   const verifier = modPow(g, h2Int, N);
   return bigIntToBufferLE(verifier, 32);
 }
@@ -137,46 +136,19 @@ function generateSRP6Credentials(username: string, password: string): SRP6Creden
   return { salt, verifier };
 }
 
-// ==================== AUTH SERVICE CLASS ====================
+// ==================== AUTH SERVICE ====================
 
 class AuthService {
 
-  // ============================================================
-  // NUEVO: Consultar permisos RBAC desde auth.rbac_account_permissions
-  // Devuelve array de permissionIds con granted=1 para la cuenta.
-  // Fail-safe: devuelve [] si la consulta falla (nunca lanza).
-  // ============================================================
+  // ==================== TOKEN GENERATION ====================
 
-  private async getUserPermissions(accountId: number): Promise<number[]> {
-    try {
-      const [rows] = await authDB.query<RowDataPacket[]>(
-        `SELECT permissionId
-         FROM rbac_account_permissions
-         WHERE accountId = ?
-           AND realmId IN (?, -1)
-           AND granted = 1`,
-        [accountId, REALM_ID]
-      );
-      return rows.map((r) => r.permissionId as number);
-    } catch (err) {
-      console.error('❌ [AUTH] Error consultando rbac_account_permissions:', err);
-      return [];
-    }
-  }
-
-  // ==================== GENERACIÓN DE TOKENS ====================
-
-  /**
-   * Generar par de tokens (access + refresh)
-   * El access token ahora incluye permissions en el payload.
-   */
   generateTokenPair(user: UserData): TokenPair {
     const accessToken = jwt.sign(
       {
         id:          user.id,
         username:    user.username,
         email:       user.email,
-        permissions: user.permissions ?? [],  // ← incluido en el JWT
+        permissions: user.permissions ?? [],
         type:        'access',
       },
       JWT_SECRET,
@@ -199,7 +171,7 @@ class AuthService {
   async saveRefreshToken(userId: number, tokenId: string, expiresAt: Date): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
-        `INSERT INTO refresh_tokens (user_id, token_id, expires_at, created_at) 
+        `INSERT INTO refresh_tokens (user_id, token_id, expires_at, created_at)
          VALUES (?, ?, ?, NOW())`,
         [userId, tokenId, expiresAt]
       );
@@ -212,7 +184,7 @@ class AuthService {
   async verifyRefreshToken(tokenId: string): Promise<boolean> {
     try {
       const [tokens] = await authDB.query<RowDataPacket[]>(
-        `SELECT * FROM refresh_tokens 
+        `SELECT id FROM refresh_tokens
          WHERE token_id = ? AND expires_at > NOW() AND revoked = 0`,
         [tokenId]
       );
@@ -236,7 +208,7 @@ class AuthService {
     }
   }
 
-  // ==================== REGISTRO ====================
+  // ==================== REGISTER ====================
 
   async register(data: RegisterData): Promise<ServiceResponse> {
     try {
@@ -269,7 +241,7 @@ class AuthService {
       console.log('🔐 [AUTH] Generando credenciales SRP6 para:', upperUsername);
 
       await authDB.query<ResultSetHeader>(
-        `INSERT INTO account (username, salt, verifier, email, joindate, expansion) 
+        `INSERT INTO account (username, salt, verifier, email, joindate, expansion)
          VALUES (?, ?, ?, ?, NOW(), 2)`,
         [upperUsername, salt, verifier, email]
       );
@@ -285,13 +257,9 @@ class AuthService {
 
   // ==================== LOGIN ====================
 
-  /**
-   * Login con rate limiting + consulta de permisos RBAC.
-   * Las permissions se incluyen en el JWT y en la respuesta al frontend.
-   */
   async login(username: string, password: string, ipAddress: string): Promise<LoginResult> {
     try {
-      // 1. Rate limiting brute-force
+      // 1. Rate limiting anti brute-force
       const recentAttempts = await this.getRecentFailedAttempts(ipAddress, username);
       if (recentAttempts >= 5) {
         console.warn('🚨 [AUTH] Demasiados intentos fallidos:', { ipAddress, username });
@@ -332,24 +300,24 @@ class AuthService {
         throw new Error('Invalid credentials');
       }
 
-      // 5. NUEVO: Consultar permisos RBAC
-      const permissions = await this.getUserPermissions(user.id);
+      // 5. Consultar permisos RBAC — fuente única: rbac.middleware.ts
+      const permissions = await getUserPermissions(user.id);
       console.log(`✅ [AUTH] Permisos de ${username}:`, permissions);
 
-      // 6. Generar tokens (permissions viajan en el access token)
+      // 6. Generar tokens (permissions viajan firmados en el access token)
       const { accessToken, refreshToken } = this.generateTokenPair({
-        id:          user.id,
-        username:    user.username,
-        email:       user.email,
+        id:       user.id,
+        username: user.username,
+        email:    user.email,
         permissions,
       });
 
-      // 7. Guardar refresh token
-      const decoded  = jwt.decode(refreshToken) as DecodedRefreshToken;
+      // 7. Persistir refresh token
+      const decoded   = jwt.decode(refreshToken) as DecodedRefreshToken;
       const expiresAt = new Date(decoded.exp * 1000);
       await this.saveRefreshToken(user.id, decoded.tokenId, expiresAt);
 
-      // 8. Limpiar intentos + log auditoría
+      // 8. Auditoría
       await this.clearFailedAttempts(ipAddress, username);
       await this.logSuccessfulLogin(user.id, ipAddress);
 
@@ -358,14 +326,14 @@ class AuthService {
       return {
         success:     true,
         message:     'Login successful',
-        token:       accessToken,   // legacy
+        token:       accessToken, // legacy — mantener hasta deprecar
         accessToken,
         refreshToken,
         user: {
-          id:          user.id,
-          username:    user.username,
-          email:       user.email,
-          permissions,               // ← el frontend lo guarda en el store
+          id:       user.id,
+          username: user.username,
+          email:    user.email,
+          permissions,
         },
       };
 
@@ -378,9 +346,8 @@ class AuthService {
   // ==================== REFRESH TOKEN ====================
 
   /**
-   * Renovar access token.
-   * Reconsulta permisos frescos desde la DB para que cambios en RBAC
-   * se reflejen sin obligar al usuario a hacer logout.
+   * Al renovar el access token se reconsultan los permisos frescos desde BD.
+   * Esto permite que cambios en RBAC se apliquen sin forzar re-login.
    */
   async refreshAccessToken(refreshToken: string): Promise<ServiceResponse> {
     try {
@@ -399,15 +366,15 @@ class AuthService {
 
       const user = users[0] as UserData;
 
-      // NUEVO: Permisos frescos al renovar
-      const permissions = await this.getUserPermissions(user.id);
+      // Permisos frescos — reflejan cambios RBAC sin re-login
+      const permissions = await getUserPermissions(user.id);
 
       const accessToken = jwt.sign(
         {
           id:          user.id,
           username:    user.username,
           email:       user.email,
-          permissions,              // ← frescos
+          permissions,
           type:        'access',
         },
         JWT_SECRET,
@@ -415,7 +382,6 @@ class AuthService {
       );
 
       console.log('✅ [AUTH] Access token renovado para:', user.username);
-
       return { success: true, message: 'Token refreshed successfully', accessToken };
 
     } catch (error: any) {
@@ -424,7 +390,7 @@ class AuthService {
     }
   }
 
-  // ==================== VERIFICACIÓN ====================
+  // ==================== VERIFY ====================
 
   verifyToken(token: string): UserData | null {
     try {
@@ -434,7 +400,7 @@ class AuthService {
         id:          decoded.id,
         username:    decoded.username,
         email:       decoded.email,
-        permissions: decoded.permissions ?? [],  // ← incluido
+        permissions: decoded.permissions ?? [],
       };
     } catch {
       return null;
@@ -442,18 +408,18 @@ class AuthService {
   }
 
   /**
-   * Obtener cuenta + permisos (usado por GET /api/auth/me)
+   * Usado por GET /api/auth/me.
+   * Siempre consulta permisos frescos desde BD — no depende del JWT.
    */
   async getAccount(accountId: number): Promise<UserData | null> {
     try {
       const [accounts] = await authDB.query<RowDataPacket[]>(
-        'SELECT id, username, email, joindate FROM account WHERE id = ?',
+        'SELECT id, username, email FROM account WHERE id = ?',
         [accountId]
       );
       if (accounts.length === 0) return null;
 
-      // NUEVO: incluir permisos frescos en /me
-      const permissions = await this.getUserPermissions(accountId);
+      const permissions = await getUserPermissions(accountId);
 
       return {
         ...(accounts[0] as UserData),
@@ -470,7 +436,7 @@ class AuthService {
   async logFailedAttempt(ipAddress: string, username: string): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
-        `INSERT INTO login_attempts (ip_address, username, success, timestamp) 
+        `INSERT INTO login_attempts (ip_address, username, success, timestamp)
          VALUES (?, ?, 0, NOW())`,
         [ipAddress, username]
       );
@@ -482,10 +448,10 @@ class AuthService {
   async getRecentFailedAttempts(ipAddress: string, username: string): Promise<number> {
     try {
       const [attempts] = await authDB.query<RowDataPacket[]>(
-        `SELECT COUNT(*) as count FROM login_attempts 
-         WHERE (ip_address = ? OR username = ?) 
-         AND success = 0 
-         AND timestamp > DATE_SUB(NOW(), INTERVAL 15 MINUTE)`,
+        `SELECT COUNT(*) as count FROM login_attempts
+         WHERE (ip_address = ? OR username = ?)
+           AND success = 0
+           AND timestamp > DATE_SUB(NOW(), INTERVAL 15 MINUTE)`,
         [ipAddress, username]
       );
       return attempts[0].count as number;
@@ -498,9 +464,9 @@ class AuthService {
   async clearFailedAttempts(ipAddress: string, username: string): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
-        `DELETE FROM login_attempts 
-         WHERE (ip_address = ? OR username = ?) 
-         AND timestamp < DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
+        `DELETE FROM login_attempts
+         WHERE (ip_address = ? OR username = ?)
+           AND timestamp < DATE_SUB(NOW(), INTERVAL 1 HOUR)`,
         [ipAddress, username]
       );
     } catch (error) {
@@ -515,7 +481,7 @@ class AuthService {
   ): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
-        `INSERT INTO login_history (user_id, ip_address, user_agent, timestamp) 
+        `INSERT INTO login_history (user_id, ip_address, user_agent, timestamp)
          VALUES (?, ?, ?, NOW())`,
         [userId, ipAddress, userAgent]
       );
@@ -529,7 +495,7 @@ class AuthService {
   async logout(refreshToken: string): Promise<ServiceResponse> {
     try {
       const decoded = jwt.decode(refreshToken) as DecodedRefreshToken | null;
-      if (!decoded || !decoded.tokenId) {
+      if (!decoded?.tokenId) {
         return { success: false, message: 'Invalid token' };
       }
       await authDB.query<ResultSetHeader>(

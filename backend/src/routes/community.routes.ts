@@ -1,185 +1,300 @@
 // backend/src/routes/community.routes.ts
-// authorName se toma del JWT (req.user.username) → sin JOIN cross-DB
 //
-// PERMISOS:
-//   POST /news    → requiere permissionId=3 en rbac_account_permissions
-//   POST /devblog → requiere permissionId=3 en rbac_account_permissions
-//   POST /forums/thread → cualquier usuario autenticado
+// RBAC: importado de rbac.middleware.ts — NO duplicar aquí.
 //
-// La verificación RBAC es inline para no depender de archivos externos.
+// Permisos:
+//   POST /news      → requireAdmin (permissionId = 3)
+//   POST /devblog   → requireAdmin (permissionId = 3)
+//   POST /forums/*  → authenticateToken (cualquier cuenta registrada)
 
 import { Router, Response } from 'express';
-import { authenticateToken, AuthRequest, optionalAuth } from '../middleware/auth.middleware';
-import { authDB } from '../config/database';
-import { RowDataPacket } from 'mysql2';
+import {
+  authenticateToken,
+  AuthRequest,
+  optionalAuth,
+} from '../middleware/auth.middleware';
+import {
+  requireAdmin,
+} from '../middleware/rbac.middleware';
 import communityService from '../services/community.service';
 
 const router = Router();
 
-// ── Helper: verificar permiso RBAC ──────────────────────────
-// Consulta auth.rbac_account_permissions directamente.
-// realmId IN (REALM_ID, -1) para soportar permisos globales.
-const REALM_ID = parseInt(process.env.REALM_ID || '-1');
+// ═══════════════════════════════════════════════════════════
+// FOROS
+// ═══════════════════════════════════════════════════════════
 
-async function checkPermission(accountId: number, permissionId: number): Promise<boolean> {
-  try {
-    const [rows] = await authDB.query<RowDataPacket[]>(
-      `SELECT granted
-       FROM rbac_account_permissions
-       WHERE accountId = ?
-         AND permissionId = ?
-         AND realmId IN (?, -1)
-         AND granted = 1
-       LIMIT 1`,
-      [accountId, permissionId, REALM_ID]
-    );
-    return rows.length > 0 && rows[0].granted === 1;
-  } catch {
-    return false; // fail-closed: si la BD falla, deniega
-  }
-}
-
-// ── FOROS ──────────────────────────────────────────────────
-
+// GET /community/forums — lista de categorías (público)
 router.get('/forums', optionalAuth, async (_req, res: Response) => {
   try {
-    res.json({ success: true, categories: await communityService.getForumCategories() });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+    const categories = await communityService.getForumCategories();
+    res.json({ success: true, categories });
+  } catch (err) {
+    console.error('[community] GET /forums', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// GET /community/forums/:categoryId/threads — hilos de una categoría (público)
 router.get('/forums/:categoryId/threads', optionalAuth, async (req, res: Response) => {
   try {
-    const page  = parseInt(req.query.page  as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    res.json({
-      success: true,
-      ...(await communityService.getThreadsByCategory(parseInt(req.params.categoryId), page, limit)),
-    });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+    const page       = Math.max(1, parseInt(req.query.page  as string) || 1);
+    const limit      = Math.min(50, parseInt(req.query.limit as string) || 20);
+    const categoryId = parseInt(req.params.categoryId);
+
+    if (isNaN(categoryId) || categoryId < 1) {
+      return res.status(400).json({ success: false, message: 'categoryId inválido' });
+    }
+
+    const data = await communityService.getThreadsByCategory(categoryId, page, limit);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[community] GET /forums/:categoryId/threads', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// GET /community/forums/thread/:threadId — hilo con respuestas (público)
+// NOTA: esta ruta debe registrarse ANTES de /:categoryId/threads
+// para que Express no interprete "thread" como un categoryId.
 router.get('/forums/thread/:threadId', optionalAuth, async (req, res: Response) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const data = await communityService.getThreadWithReplies(parseInt(req.params.threadId), page);
+    const page     = Math.max(1, parseInt(req.query.page as string) || 1);
+    const threadId = parseInt(req.params.threadId);
+
+    if (isNaN(threadId) || threadId < 1) {
+      return res.status(400).json({ success: false, message: 'threadId inválido' });
+    }
+
+    const data = await communityService.getThreadWithReplies(threadId, page);
     if (!data) return res.status(404).json({ success: false, message: 'Hilo no encontrado' });
+
     res.json({ success: true, thread: data });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] GET /forums/thread/:threadId', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// POST /community/forums/thread — crear hilo (cualquier usuario autenticado)
 router.post('/forums/thread', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const { categoryId, title, content } = req.body;  // ← acepta camelCase del frontend
-    if (!categoryId || !title?.trim() || !content?.trim())
-      return res.status(400).json({ success: false, message: 'Datos incompletos' });
+    const { categoryId, title, content } = req.body;
+
+    if (!categoryId || !title?.trim() || !content?.trim()) {
+      return res.status(400).json({ success: false, message: 'categoryId, título y contenido son obligatorios' });
+    }
+    if (title.trim().length < 5 || title.trim().length > 200) {
+      return res.status(400).json({ success: false, message: 'El título debe tener entre 5 y 200 caracteres' });
+    }
+    if (content.trim().length < 10 || content.trim().length > 10000) {
+      return res.status(400).json({ success: false, message: 'El contenido debe tener entre 10 y 10.000 caracteres' });
+    }
 
     const thread = await communityService.createThread({
-      categoryId,  // ← pasa directo (el servicio ya usa camelCase)
-      title, 
-      content,
+      categoryId: parseInt(categoryId),
+      title:      title.trim(),
+      content:    content.trim(),
       authorId:   req.user!.id,
-      authorName: req.user!.username,
     });
+
     res.status(201).json({ success: true, thread });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] POST /forums/thread', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// POST /community/forums/thread/:threadId/reply — responder hilo (autenticado)
 router.post('/forums/thread/:threadId/reply', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { content } = req.body;
-    if (!content?.trim())
-      return res.status(400).json({ success: false, message: 'Contenido requerido' });
+    const threadId = parseInt(req.params.threadId);
+
+    if (isNaN(threadId) || threadId < 1) {
+      return res.status(400).json({ success: false, message: 'threadId inválido' });
+    }
+    if (!content?.trim() || content.trim().length < 2) {
+      return res.status(400).json({ success: false, message: 'Contenido requerido (mínimo 2 caracteres)' });
+    }
 
     const reply = await communityService.createReply({
-      threadId:   parseInt(req.params.threadId),
-      content,
-      authorId:   req.user!.id,
-      authorName: req.user!.username,
+      threadId,
+      content:  content.trim(),
+      authorId: req.user!.id,
     });
+
     res.status(201).json({ success: true, reply });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] POST /forums/thread/:threadId/reply', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
-// ── NOTICIAS ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// NOTICIAS
+// ═══════════════════════════════════════════════════════════
 
+// GET /community/news (público)
 router.get('/news', optionalAuth, async (req, res: Response) => {
   try {
-    const page  = parseInt(req.query.page  as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    res.json({ success: true, ...(await communityService.getNews(page, limit)) });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+    const page  = Math.max(1, parseInt(req.query.page  as string) || 1);
+    const limit = Math.min(20, parseInt(req.query.limit as string) || 10);
+    const data  = await communityService.getNews(page, limit);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[community] GET /news', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// GET /community/news/:slug (público)
 router.get('/news/:slug', optionalAuth, async (req, res: Response) => {
   try {
     const news = await communityService.getNewsBySlug(req.params.slug);
-    if (!news) return res.status(404).json({ success: false, message: 'No encontrada' });
+    if (!news) return res.status(404).json({ success: false, message: 'Noticia no encontrada' });
     res.json({ success: true, news });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] GET /news/:slug', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
-// POST /news — requiere JWT + permissionId=3
-router.post('/news', authenticateToken, async (req: AuthRequest, res: Response) => {
+// POST /community/news — crear noticia (solo ADMIN)
+router.post('/news', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const isAdmin = await checkPermission(req.user!.id, 3);
-    if (!isAdmin) {
-      return res.status(403).json({ success: false, message: 'No tienes permisos para crear noticias' });
+    const { title, content, summary, tags, cover_image, is_published } = req.body;
+
+    if (!title?.trim() || !content?.trim()) {
+      return res.status(400).json({ success: false, message: 'Título y contenido son obligatorios' });
     }
 
-    const { title, content, summary, tags } = req.body;
-    if (!title?.trim() || !content?.trim())
-      return res.status(400).json({ success: false, message: 'Título y contenido son obligatorios' });
-
     const news = await communityService.createNews({
-      title, content,
-      summary:    summary    || '',
-      tags:       tags       || '',
-      authorId:   req.user!.id,
-      authorName: req.user!.username,
+      title:        title.trim(),
+      content:      content.trim(),
+      summary:      summary?.trim()     || '',
+      tags:         tags?.trim()        || '',
+      cover_image:  cover_image?.trim() || '',
+      is_published: is_published ?? 1,
+      authorId:     req.user!.id,
     });
+
     res.status(201).json({ success: true, news });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] POST /news', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
-// ── DEVBLOG ────────────────────────────────────────────────
+// PUT /community/news/:id — editar noticia (solo ADMIN)
+router.put('/news/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, message: 'id inválido' });
 
+    const updated = await communityService.updateNews(id, req.body);
+    res.json({ success: true, news: updated });
+  } catch (err) {
+    console.error('[community] PUT /news/:id', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
+});
+
+// DELETE /community/news/:id (solo ADMIN)
+router.delete('/news/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, message: 'id inválido' });
+
+    await communityService.deleteNews(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[community] DELETE /news/:id', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// DEVBLOG
+// ═══════════════════════════════════════════════════════════
+
+// GET /community/devblog (público)
 router.get('/devblog', optionalAuth, async (req, res: Response) => {
   try {
-    const page  = parseInt(req.query.page  as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    res.json({ success: true, ...(await communityService.getDevBlogPosts(page, limit)) });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+    const page  = Math.max(1, parseInt(req.query.page  as string) || 1);
+    const limit = Math.min(20, parseInt(req.query.limit as string) || 10);
+    const data  = await communityService.getDevBlogPosts(page, limit);
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[community] GET /devblog', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
+// GET /community/devblog/:slug (público)
 router.get('/devblog/:slug', optionalAuth, async (req, res: Response) => {
   try {
     const post = await communityService.getDevBlogBySlug(req.params.slug);
-    if (!post) return res.status(404).json({ success: false, message: 'No encontrado' });
+    if (!post) return res.status(404).json({ success: false, message: 'Post no encontrado' });
     res.json({ success: true, post });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] GET /devblog/:slug', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
-// POST /devblog — requiere JWT + permissionId=3
-router.post('/devblog', authenticateToken, async (req: AuthRequest, res: Response) => {
+// POST /community/devblog — crear post (solo ADMIN)
+router.post('/devblog', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const isAdmin = await checkPermission(req.user!.id, 3);
-    if (!isAdmin) {
-      return res.status(403).json({ success: false, message: 'No tienes permisos para publicar en el dev blog' });
+    const { title, content, summary, tags, cover_image, is_published } = req.body;
+
+    if (!title?.trim() || !content?.trim()) {
+      return res.status(400).json({ success: false, message: 'Título y contenido son obligatorios' });
     }
 
-    const { title, content, summary, tags } = req.body;
-    if (!title?.trim() || !content?.trim())
-      return res.status(400).json({ success: false, message: 'Título y contenido son obligatorios' });
-
     const post = await communityService.createDevBlogPost({
-      title, content,
-      summary:    summary    || '',
-      tags:       tags       || '',
-      authorId:   req.user!.id,
-      authorName: req.user!.username,
+      title:        title.trim(),
+      content:      content.trim(),
+      summary:      summary?.trim()     || '',
+      tags:         tags?.trim()        || '',
+      cover_image:  cover_image?.trim() || '',
+      is_published: is_published ?? 1,
+      authorId:     req.user!.id,
     });
+
     res.status(201).json({ success: true, post });
-  } catch { res.status(500).json({ success: false, message: 'Error interno' }); }
+  } catch (err) {
+    console.error('[community] POST /devblog', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
+});
+
+// PUT /community/devblog/:id (solo ADMIN)
+router.put('/devblog/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, message: 'id inválido' });
+
+    const updated = await communityService.updateDevBlogPost(id, req.body);
+    res.json({ success: true, post: updated });
+  } catch (err) {
+    console.error('[community] PUT /devblog/:id', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
+});
+
+// DELETE /community/devblog/:id (solo ADMIN)
+router.delete('/devblog/:id', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, message: 'id inválido' });
+
+    await communityService.deleteDevBlogPost(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[community] DELETE /devblog/:id', err);
+    res.status(500).json({ success: false, message: 'Error interno' });
+  }
 });
 
 export default router;

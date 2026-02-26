@@ -1,104 +1,129 @@
 // backend/src/middleware/rbac.middleware.ts
 //
-// RBAC basado en la tabla TrinityCore: auth.rbac_account_permissions
+// FUENTE DE VERDAD ÚNICA para RBAC en todo el proyecto.
 //
-// Schema relevante (TrinityCore 3.3.5a):
-//   rbac_account_permissions(accountId, permissionId, granted, realmId)
+// ❌ NO duplicar esta lógica en:
+//    - community.routes.ts  → usar requireAdmin / requirePermission
+//    - auth.service.ts      → usar getUserPermissions() de aquí si es necesario
+//    - cualquier otro route handler
 //
-// Convención de permisos usada en este CMS:
-//   permissionId = 3, granted = 1  → Admin: puede crear/editar news y devblog
-//   (usuarios registrados con JWT válido) → pueden crear hilos en el foro
+// Schema TrinityCore 3.3.5a (base auth):
+//   rbac_account_permissions(accountId INT, permissionId INT, granted TINYINT, realmId INT)
 //
-// realmId = -1 significa "todos los reinos" (wildcard global en TrinityCore)
-// Si el realm específico del servidor tiene otro ID, ajusta REALM_ID en .env
+// realmId = -1 → permiso global (todos los reinos)
+// granted = 1  → permitido
+// granted = 0  → revocado explícitamente (tiene precedencia sobre granted=1 global)
 
 import { Response, NextFunction } from 'express';
 import { authDB } from '../config/database';
 import { RowDataPacket } from 'mysql2';
 import { AuthRequest } from './auth.middleware';
 
-// ID del realm. -1 = global (aplica a todos los reinos)
-// Si tu servidor usa un realmId específico, ajusta esta variable.
 const REALM_ID = parseInt(process.env.REALM_ID || '-1');
 
-// ── IDs de permisos definidos en tu servidor ────────────────
+// ── Mapa canónico de permisos ────────────────────────────────
+// Extiende aquí cuando agregues roles nuevos.
+// El frontend lee estos IDs desde user.permissions[] en el JWT.
 export const PERMISSION = {
-  ADMIN: 3,       // permissionId=3 → crear news, devblog
-  // Si en el futuro agregas más niveles, añádelos aquí:
-  // GM: 2,
-  // MODERATOR: 4,
+  ADMIN:     3,  // Crear/editar news y devblog
+  GM:        2,  // Game Master — comandos en servidor
+  MODERATOR: 4,  // Moderar foro (futuro)
 } as const;
 
-/**
- * Verifica si una cuenta tiene un permiso específico en TrinityCore.
- *
- * La lógica es:
- *   1. Busca permiso exacto para (accountId, permissionId, realmId)
- *   2. Si no encuentra, busca con realmId = -1 (global)
- *   3. granted = 1 → tiene permiso; granted = 0 → explícitamente revocado
- *
- * Se usa authDB porque rbac_account_permissions vive en la base `auth`.
- */
-async function hasPermission(accountId: number, permissionId: number): Promise<boolean> {
+export type PermissionId = typeof PERMISSION[keyof typeof PERMISSION];
+
+// ── Core: consulta RBAC contra TrinityCore ───────────────────
+//
+// Prioridad de resolución:
+//   1. Busca permiso para realmId específico
+//   2. Busca permiso para realmId = -1 (global)
+//   3. Si granted = 0 en cualquier nivel → revocado
+//   4. Sin resultado → denegado (fail-closed)
+//
+// Esta función es interna. Los middlewares de más abajo son la
+// interfaz pública.
+export async function hasPermission(
+  accountId: number,
+  permissionId: number
+): Promise<boolean> {
   try {
-    // Consulta que respeta tanto el realmId del servidor como el global (-1)
-    // Prioriza el realmId específico sobre el global si ambos existen.
     const [rows] = await authDB.query<RowDataPacket[]>(
       `SELECT granted
        FROM rbac_account_permissions
-       WHERE accountId = ?
+       WHERE accountId    = ?
          AND permissionId = ?
          AND realmId IN (?, -1)
        ORDER BY
-         -- Prioriza el realm específico sobre el global
-         CASE WHEN realmId = ? THEN 0 ELSE 1 END
+         CASE WHEN realmId = ? THEN 0 ELSE 1 END  -- realm específico primero
        LIMIT 1`,
       [accountId, permissionId, REALM_ID, REALM_ID]
     );
 
     if (rows.length === 0) return false;
-
-    // granted = 1 → tiene permiso, granted = 0 → revocado explícitamente
     return rows[0].granted === 1;
 
   } catch (err) {
     console.error('[RBAC] Error consultando rbac_account_permissions:', err);
-    // En caso de fallo de BD, denegamos acceso por defecto (fail-closed)
-    return false;
+    return false; // fail-closed
   }
 }
 
-/**
- * requirePermission(permissionId)
- *
- * Middleware factory. Verifica que el usuario autenticado tenga
- * el permissionId indicado en rbac_account_permissions.
- *
- * Uso:
- *   router.post('/news', authenticateToken, requirePermission(PERMISSION.ADMIN), handler)
- *
- * Requiere que authenticateToken haya corrido antes (req.user debe existir).
- */
+// ── Consulta todos los permisos de una cuenta ────────────────
+// Usado por auth.service.ts para incluirlos en el JWT al login/refresh.
+// Exportada para que auth.service la use directamente y no duplique la query.
+export async function getUserPermissions(accountId: number): Promise<number[]> {
+  try {
+    const [rows] = await authDB.query<RowDataPacket[]>(
+      `SELECT permissionId
+       FROM rbac_account_permissions
+       WHERE accountId = ?
+         AND realmId IN (?, -1)
+         AND granted = 1`,
+      [accountId, REALM_ID]
+    );
+    return rows.map(r => r.permissionId as number);
+  } catch (err) {
+    console.error('[RBAC] Error consultando permisos de usuario:', err);
+    return []; // fail-safe: devuelve vacío, nunca lanza
+  }
+}
+
+// ── Middleware factory ────────────────────────────────────────
+//
+// Uso:
+//   router.post('/news', authenticateToken, requirePermission(PERMISSION.ADMIN), handler)
+//
+// IMPORTANTE: authenticateToken debe correr antes.
 export function requirePermission(permissionId: number) {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-    // Doble guardia: si el token no fue verificado, 401
     if (!req.user) {
       res.status(401).json({
         success: false,
         message: 'Autenticación requerida',
-        code: 'NO_AUTH'
+        code: 'NO_AUTH',
       });
       return;
     }
 
-    const allowed = await hasPermission(req.user.id, permissionId);
+    // Optimización: si los permisos vienen en el JWT, los verificamos
+    // localmente sin tocar la BD. Si no, consultamos la BD (fallback).
+    const jwtPermissions: number[] | undefined = (req.user as any).permissions;
+
+    let allowed: boolean;
+
+    if (Array.isArray(jwtPermissions)) {
+      // Fast path: permisos en el JWT (evita query RBAC)
+      allowed = jwtPermissions.includes(permissionId);
+    } else {
+      // Slow path: consulta fresca a la BD
+      allowed = await hasPermission(req.user.id, permissionId);
+    }
 
     if (!allowed) {
-      // 403 y no revelamos qué permiso falta (information disclosure)
       res.status(403).json({
         success: false,
         message: 'No tienes permisos para realizar esta acción',
-        code: 'FORBIDDEN'
+        code: 'FORBIDDEN',
       });
       return;
     }
@@ -107,26 +132,26 @@ export function requirePermission(permissionId: number) {
   };
 }
 
-/**
- * requireAdmin
- *
- * Alias semántico de requirePermission(PERMISSION.ADMIN).
- * Úsalo para rutas de news y devblog.
- *
- * Uso:
- *   router.post('/news', authenticateToken, requireAdmin, handler)
- */
+// ── Alias semánticos ─────────────────────────────────────────
+// Úsalos en las rutas para mayor legibilidad.
+
+/** POST /news, POST /devblog — solo admins */
 export const requireAdmin = requirePermission(PERMISSION.ADMIN);
 
-/**
- * injectUserPermissions (opcional)
- *
- * Inyecta en req.permissions el set de permisos del usuario actual.
- * Útil para devolver al frontend qué puede hacer sin exponer la tabla RBAC.
- *
- * Uso recomendado: en GET /api/auth/me para que el frontend sepa
- * si debe mostrar los botones "Crear noticia" / "Crear devblog".
- */
+/** Comandos GM — solo GMs */
+export const requireGM = requirePermission(PERMISSION.GM);
+
+/** Moderación de foro — solo moderadores (futuro) */
+export const requireModerator = requirePermission(PERMISSION.MODERATOR);
+
+// ── Inyector de permisos en req.user ────────────────────────
+//
+// Middleware opcional. Añade req.user.permissions como Set<number>
+// para que los handlers puedan verificar múltiples permisos sin
+// múltiples queries a la BD.
+//
+// Uso recomendado: en rutas que necesitan comprobar permisos
+// de forma condicional (no bloqueante), por ejemplo en GET /me.
 export async function injectUserPermissions(
   req: AuthRequest,
   _res: Response,
@@ -135,19 +160,12 @@ export async function injectUserPermissions(
   if (!req.user) return next();
 
   try {
-    const [rows] = await authDB.query<RowDataPacket[]>(
-      `SELECT permissionId, granted
-       FROM rbac_account_permissions
-       WHERE accountId = ?
-         AND realmId IN (?, -1)
-         AND granted = 1`,
-      [req.user.id, REALM_ID]
-    );
-
-    // Adjunta un Set de permissionIds al objeto user
-    (req.user as any).permissions = new Set(rows.map(r => r.permissionId));
+    const perms = await getUserPermissions(req.user.id);
+    (req.user as any).permissionsSet = new Set(perms);
+    (req.user as any).permissions    = perms;
   } catch {
-    (req.user as any).permissions = new Set();
+    (req.user as any).permissionsSet = new Set<number>();
+    (req.user as any).permissions    = [];
   }
 
   next();
