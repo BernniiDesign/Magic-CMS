@@ -172,7 +172,6 @@ export const serverAPI = {
   getStats: () =>
     api.get('/server/stats'),
 
-  // ← NUEVO: usado por CommunitySidebar
   getTopKillers: (limit = 5) =>
     api.get(`/server/top-killers?limit=${limit}`),
 };
@@ -191,9 +190,40 @@ export const charactersAPI = {
     api.get(`/characters/top?limit=${limit}`),
 };
 
-// ← NUEVO: endpoints de comunidad (foros, noticias, devblog)
+// ==================== TIPOS ====================
+
+export interface CreateNewsPayload {
+  title: string;
+  slug: string;
+  summary?: string;
+  content: string;
+  tags?: string;
+  cover_image?: string;
+  is_published?: 0 | 1;
+}
+
+export interface CreateDevBlogPayload {
+  title: string;
+  slug: string;
+  summary?: string;
+  content: string;
+  tags?: string;
+  cover_image?: string;
+  is_published?: 0 | 1;
+}
+
+export interface CreateThreadPayload {
+  categoryId: number;  // ← camelCase
+  title: string;
+  content: string;
+}
+
+// ==================== COMMUNITY API ====================
+
 export const communityAPI = {
-  // Foros
+
+  // ── Foros ───────────────────────────────────────────────────
+
   getForumCategories: () =>
     api.get('/community/forums'),
 
@@ -203,25 +233,53 @@ export const communityAPI = {
   getThread: (threadId: number, page = 1) =>
     api.get(`/community/forums/thread/${threadId}?page=${page}`),
 
-  createThread: (data: { categoryId: number; title: string; content: string }) =>
-    api.post('/community/forums/thread', data),
+  // Requiere: usuario autenticado (cualquier cuenta registrada)
+  createThread: (payload: CreateThreadPayload) =>
+    api.post('/community/forums/thread', payload),
 
+  // Requiere: usuario autenticado
   replyThread: (threadId: number, content: string) =>
     api.post(`/community/forums/thread/${threadId}/reply`, { content }),
 
-  // Noticias
-  getNews: (page = 1) =>
-    api.get(`/community/news?page=${page}`),
+  // ── Noticias ────────────────────────────────────────────────
+
+  getNews: (page = 1, limit = 8) =>
+    api.get(`/community/news?page=${page}&limit=${limit}`),
 
   getNewsPost: (slug: string) =>
     api.get(`/community/news/${slug}`),
 
-  // DevBlog
-  getDevBlog: (page = 1) =>
-    api.get(`/community/devblog?page=${page}`),
+  // Requiere: JWT + permissionId=3 en rbac_account_permissions
+  createNews: (payload: CreateNewsPayload) =>
+    api.post('/community/news', payload),
+
+  // Requiere: JWT + permissionId=3
+  updateNews: (id: number, payload: Partial<CreateNewsPayload>) =>
+    api.put(`/community/news/${id}`, payload),
+
+  // Requiere: JWT + permissionId=3
+  deleteNews: (id: number) =>
+    api.delete(`/community/news/${id}`),
+
+  // ── Dev Blog ────────────────────────────────────────────────
+
+  getDevBlog: (page = 1, limit = 8) =>
+    api.get(`/community/devblog?page=${page}&limit=${limit}`),
 
   getDevBlogPost: (slug: string) =>
     api.get(`/community/devblog/${slug}`),
+
+  // Requiere: JWT + permissionId=3
+  createDevBlog: (payload: CreateDevBlogPayload) =>
+    api.post('/community/devblog', payload),
+
+  // Requiere: JWT + permissionId=3
+  updateDevBlog: (id: number, payload: Partial<CreateDevBlogPayload>) =>
+    api.put(`/community/devblog/${id}`, payload),
+
+  // Requiere: JWT + permissionId=3
+  deleteDevBlog: (id: number) =>
+    api.delete(`/community/devblog/${id}`),
 };
 
 export default api;

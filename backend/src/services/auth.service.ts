@@ -23,6 +23,7 @@ interface LoginResult {
     id: number;
     username: string;
     email: string;
+    permissions: number[];  // ← NUEVO
   };
 }
 
@@ -35,12 +36,14 @@ interface UserData {
   id: number;
   username: string;
   email: string;
+  permissions?: number[];  // ← NUEVO
 }
 
 interface DecodedAccessToken {
   id: number;
   username: string;
   email: string;
+  permissions: number[];   // ← NUEVO
   type: 'access';
   iat: number;
   exp: number;
@@ -68,16 +71,17 @@ interface ServiceResponse {
 
 // ==================== CONSTANTS ====================
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your-refresh-secret-change-this';
-const ACCESS_TOKEN_EXPIRY = '15m'; // Token corto (15 minutos)
-const REFRESH_TOKEN_EXPIRY = '7d'; // Token largo (7 días)
+const JWT_SECRET          = process.env.JWT_SECRET          || 'your-secret-key-change-this';
+const JWT_REFRESH_SECRET  = process.env.JWT_REFRESH_SECRET  || 'your-refresh-secret-change-this';
+const ACCESS_TOKEN_EXPIRY  = '15m';
+const REFRESH_TOKEN_EXPIRY = '7d';
+
+// realmId: -1 = global (todos los reinos en TrinityCore)
+// Ajusta REALM_ID en .env si tu servidor usa un ID específico
+const REALM_ID = parseInt(process.env.REALM_ID || '-1');
 
 // ==================== SRP6 UTILITIES ====================
 
-/**
- * Convierte un Buffer a BigInt en little-endian
- */
 function bufferToBigIntLE(buffer: Buffer): bigint {
   let result = 0n;
   for (let i = buffer.length - 1; i >= 0; i--) {
@@ -86,30 +90,19 @@ function bufferToBigIntLE(buffer: Buffer): bigint {
   return result;
 }
 
-/**
- * Convierte un BigInt a Buffer en little-endian con padding a la derecha
- */
 function bigIntToBufferLE(value: bigint, size: number = 32): Buffer {
   const hex = value.toString(16).padStart(size * 2, '0');
   const buffer = Buffer.from(hex, 'hex');
-  
-  // Invertir para little-endian
   const reversed = Buffer.alloc(buffer.length);
   for (let i = 0; i < buffer.length; i++) {
     reversed[i] = buffer[buffer.length - 1 - i];
   }
-  
-  // Padding a la derecha
   if (reversed.length < size) {
     return Buffer.concat([reversed, Buffer.alloc(size - reversed.length)]);
   }
-  
   return reversed.slice(0, size);
 }
 
-/**
- * Función auxiliar para modPow
- */
 function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   if (modulus === 1n) return 0n;
   let result = 1n;
@@ -122,43 +115,24 @@ function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
   return result;
 }
 
-/**
- * Calcula salt y verifier para SRP6 (TrinityCore 3.3.5a)
- */
 function calculateSRP6Verifier(username: string, password: string, salt: Buffer): Buffer {
-  // Constantes de SRP6
   const g = 7n;
   const N = BigInt('0x894B645E89E1535BBDAD5B8B290650530801B18EBFBF5E8FAB3C82872A3E9BB7');
-  
-  // Paso 1: h1 = SHA1(username:password) en uppercase
   const h1 = crypto
     .createHash('sha1')
     .update(`${username.toUpperCase()}:${password.toUpperCase()}`)
     .digest();
-  
-  // Paso 2: h2 = SHA1(salt || h1)
   const h2 = crypto
     .createHash('sha1')
     .update(Buffer.concat([salt, h1]))
     .digest();
-  
-  // Paso 3: Convertir h2 a entero en little-endian
-  const h2Int = bufferToBigIntLE(h2);
-  
-  // Paso 4: Calcular verifier = g^h2 mod N
+  const h2Int   = bufferToBigIntLE(h2);
   const verifier = modPow(g, h2Int, N);
-  
-  // Paso 5: Convertir verifier a buffer en little-endian con padding a la derecha
-  const verifierBuffer = bigIntToBufferLE(verifier, 32);
-  
-  return verifierBuffer;
+  return bigIntToBufferLE(verifier, 32);
 }
 
-/**
- * Genera salt y verifier para registro
- */
 function generateSRP6Credentials(username: string, password: string): SRP6Credentials {
-  const salt = crypto.randomBytes(32);
+  const salt     = crypto.randomBytes(32);
   const verifier = calculateSRP6Verifier(username, password, salt);
   return { salt, verifier };
 }
@@ -166,31 +140,54 @@ function generateSRP6Credentials(username: string, password: string): SRP6Creden
 // ==================== AUTH SERVICE CLASS ====================
 
 class AuthService {
-  
+
+  // ============================================================
+  // NUEVO: Consultar permisos RBAC desde auth.rbac_account_permissions
+  // Devuelve array de permissionIds con granted=1 para la cuenta.
+  // Fail-safe: devuelve [] si la consulta falla (nunca lanza).
+  // ============================================================
+
+  private async getUserPermissions(accountId: number): Promise<number[]> {
+    try {
+      const [rows] = await authDB.query<RowDataPacket[]>(
+        `SELECT permissionId
+         FROM rbac_account_permissions
+         WHERE accountId = ?
+           AND realmId IN (?, -1)
+           AND granted = 1`,
+        [accountId, REALM_ID]
+      );
+      return rows.map((r) => r.permissionId as number);
+    } catch (err) {
+      console.error('❌ [AUTH] Error consultando rbac_account_permissions:', err);
+      return [];
+    }
+  }
+
   // ==================== GENERACIÓN DE TOKENS ====================
-  
+
   /**
    * Generar par de tokens (access + refresh)
+   * El access token ahora incluye permissions en el payload.
    */
   generateTokenPair(user: UserData): TokenPair {
-    // Access token (corto, va en memoria/localStorage)
     const accessToken = jwt.sign(
       {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        type: 'access'
+        id:          user.id,
+        username:    user.username,
+        email:       user.email,
+        permissions: user.permissions ?? [],  // ← incluido en el JWT
+        type:        'access',
       },
       JWT_SECRET,
       { expiresIn: ACCESS_TOKEN_EXPIRY }
     );
 
-    // Refresh token (largo, va en httpOnly cookie)
     const refreshToken = jwt.sign(
       {
-        id: user.id,
-        type: 'refresh',
-        tokenId: crypto.randomBytes(16).toString('hex') // Para invalidación
+        id:      user.id,
+        type:    'refresh',
+        tokenId: crypto.randomBytes(16).toString('hex'),
       },
       JWT_REFRESH_SECRET,
       { expiresIn: REFRESH_TOKEN_EXPIRY }
@@ -199,9 +196,6 @@ class AuthService {
     return { accessToken, refreshToken };
   }
 
-  /**
-   * Guardar refresh token en DB (para invalidación)
-   */
   async saveRefreshToken(userId: number, tokenId: string, expiresAt: Date): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
@@ -215,9 +209,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Verificar si refresh token es válido
-   */
   async verifyRefreshToken(tokenId: string): Promise<boolean> {
     try {
       const [tokens] = await authDB.query<RowDataPacket[]>(
@@ -232,9 +223,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Invalidar todos los tokens de un usuario (logout global)
-   */
   async revokeAllUserTokens(userId: number): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
@@ -250,55 +238,36 @@ class AuthService {
 
   // ==================== REGISTRO ====================
 
-  /**
-   * Registrar nuevo usuario
-   */
   async register(data: RegisterData): Promise<ServiceResponse> {
     try {
       const { username, password, email } = data;
-      
-      // Validación de entrada
+
       if (!username || !password || !email) {
-        return {
-          success: false,
-          message: 'Missing required fields'
-        };
+        return { success: false, message: 'Missing required fields' };
       }
 
-      // Convertir username a mayúsculas (TrinityCore usa uppercase)
       const upperUsername = username.toUpperCase();
 
-      // Verificar si el usuario ya existe
       const [existingUsers] = await authDB.query<RowDataPacket[]>(
         'SELECT id FROM account WHERE username = ?',
         [upperUsername]
       );
-
       if (existingUsers.length > 0) {
-        return {
-          success: false,
-          message: 'Username already exists'
-        };
+        return { success: false, message: 'Username already exists' };
       }
 
-      // Verificar si el email ya existe
       const [existingEmails] = await authDB.query<RowDataPacket[]>(
         'SELECT id FROM account WHERE email = ?',
         [email]
       );
-
       if (existingEmails.length > 0) {
-        return {
-          success: false,
-          message: 'Email already exists'
-        };
+        return { success: false, message: 'Email already exists' };
       }
 
-      // Generar credenciales SRP6
       const { salt, verifier } = generateSRP6Credentials(username, password);
-      
+
       console.log('🔐 [AUTH] Generando credenciales SRP6 para:', upperUsername);
-      
+
       await authDB.query<ResultSetHeader>(
         `INSERT INTO account (username, salt, verifier, email, joindate, expansion) 
          VALUES (?, ?, ?, ?, NOW(), 2)`,
@@ -306,41 +275,34 @@ class AuthService {
       );
 
       console.log('✅ [AUTH] Usuario registrado exitosamente:', upperUsername);
+      return { success: true, message: 'Account created successfully' };
 
-      return {
-        success: true,
-        message: 'Account created successfully'
-      };
     } catch (error: any) {
       console.error('❌ [AUTH] Register error:', error);
-      return {
-        success: false,
-        message: 'Error creating account'
-      };
+      return { success: false, message: 'Error creating account' };
     }
   }
 
   // ==================== LOGIN ====================
 
   /**
-   * Login con rate limiting a nivel de servicio
+   * Login con rate limiting + consulta de permisos RBAC.
+   * Las permissions se incluyen en el JWT y en la respuesta al frontend.
    */
   async login(username: string, password: string, ipAddress: string): Promise<LoginResult> {
     try {
-      // 1. Verificar intentos fallidos recientes (prevenir brute force)
+      // 1. Rate limiting brute-force
       const recentAttempts = await this.getRecentFailedAttempts(ipAddress, username);
-      
       if (recentAttempts >= 5) {
         console.warn('🚨 [AUTH] Demasiados intentos fallidos:', { ipAddress, username });
         throw new Error('Too many failed attempts. Try again in 15 minutes.');
       }
 
-      // 2. Buscar usuario
+      // 2. Buscar cuenta
       const [users] = await authDB.query<RowDataPacket[]>(
         'SELECT id, username, email, salt, verifier, locked FROM account WHERE username = ?',
         [username.toUpperCase()]
       );
-
       if (users.length === 0) {
         await this.logFailedAttempt(ipAddress, username);
         throw new Error('Invalid credentials');
@@ -348,111 +310,105 @@ class AuthService {
 
       const user = users[0];
 
-      // 3. Verificar si la cuenta está bloqueada
+      // 3. Cuenta bloqueada
       if (user.locked === 1) {
         console.warn('🔒 [AUTH] Cuenta bloqueada:', username);
         throw new Error('Account is locked. Contact support.');
       }
 
-      // 4. Verificar contraseña (SRP6)
+      // 4. Verificar contraseña SRP6
       if (!user.salt || !user.verifier) {
-        console.error('❌ [AUTH] Usuario sin salt/verifier:', username);
         await this.logFailedAttempt(ipAddress, username);
         throw new Error('Invalid credentials');
       }
 
       const calculatedVerifier = calculateSRP6Verifier(username, password, user.salt);
       const passwordValid = Buffer.compare(calculatedVerifier, user.verifier) === 0;
-      
-      console.log('🔐 [AUTH] Verificando login para:', username);
-      console.log('  Password válido:', passwordValid);
+
+      console.log('🔐 [AUTH] Verificando login para:', username, '| válido:', passwordValid);
 
       if (!passwordValid) {
         await this.logFailedAttempt(ipAddress, username);
         throw new Error('Invalid credentials');
       }
 
-      // 5. Generar tokens
+      // 5. NUEVO: Consultar permisos RBAC
+      const permissions = await this.getUserPermissions(user.id);
+      console.log(`✅ [AUTH] Permisos de ${username}:`, permissions);
+
+      // 6. Generar tokens (permissions viajan en el access token)
       const { accessToken, refreshToken } = this.generateTokenPair({
-        id: user.id,
-        username: user.username,
-        email: user.email
+        id:          user.id,
+        username:    user.username,
+        email:       user.email,
+        permissions,
       });
-      
-      // 6. Guardar refresh token
-      const decoded = jwt.decode(refreshToken) as DecodedRefreshToken;
+
+      // 7. Guardar refresh token
+      const decoded  = jwt.decode(refreshToken) as DecodedRefreshToken;
       const expiresAt = new Date(decoded.exp * 1000);
       await this.saveRefreshToken(user.id, decoded.tokenId, expiresAt);
 
-      // 7. Limpiar intentos fallidos
+      // 8. Limpiar intentos + log auditoría
       await this.clearFailedAttempts(ipAddress, username);
-
-      // 8. Log de login exitoso
       await this.logSuccessfulLogin(user.id, ipAddress);
 
       console.log('✅ [AUTH] Login exitoso para:', username);
 
       return {
-        success: true,
-        message: 'Login successful',
-        token: accessToken, // Mantener compatibilidad con código actual
+        success:     true,
+        message:     'Login successful',
+        token:       accessToken,   // legacy
         accessToken,
         refreshToken,
         user: {
-          id: user.id,
-          username: user.username,
-          email: user.email
-        }
+          id:          user.id,
+          username:    user.username,
+          email:       user.email,
+          permissions,               // ← el frontend lo guarda en el store
+        },
       };
+
     } catch (error: any) {
       console.error('❌ [AUTH] Login error:', error.message);
-      return {
-        success: false,
-        message: error.message || 'Error during login'
-      };
+      return { success: false, message: error.message || 'Error during login' };
     }
   }
 
   // ==================== REFRESH TOKEN ====================
 
   /**
-   * Renovar access token usando refresh token
+   * Renovar access token.
+   * Reconsulta permisos frescos desde la DB para que cambios en RBAC
+   * se reflejen sin obligar al usuario a hacer logout.
    */
   async refreshAccessToken(refreshToken: string): Promise<ServiceResponse> {
     try {
-      // 1. Verificar que el refresh token sea válido
       const decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as DecodedRefreshToken;
-      
-      if (decoded.type !== 'refresh') {
-        throw new Error('Invalid token type');
-      }
 
-      // 2. Verificar que no esté revocado
+      if (decoded.type !== 'refresh') throw new Error('Invalid token type');
+
       const isValid = await this.verifyRefreshToken(decoded.tokenId);
-      
-      if (!isValid) {
-        throw new Error('Token has been revoked');
-      }
+      if (!isValid) throw new Error('Token has been revoked');
 
-      // 3. Buscar usuario
       const [users] = await authDB.query<RowDataPacket[]>(
         'SELECT id, username, email FROM account WHERE id = ?',
         [decoded.id]
       );
-
-      if (users.length === 0) {
-        throw new Error('User not found');
-      }
+      if (users.length === 0) throw new Error('User not found');
 
       const user = users[0] as UserData;
 
-      // 4. Generar nuevo access token
+      // NUEVO: Permisos frescos al renovar
+      const permissions = await this.getUserPermissions(user.id);
+
       const accessToken = jwt.sign(
         {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          type: 'access'
+          id:          user.id,
+          username:    user.username,
+          email:       user.email,
+          permissions,              // ← frescos
+          type:        'access',
         },
         JWT_SECRET,
         { expiresIn: ACCESS_TOKEN_EXPIRY }
@@ -460,45 +416,33 @@ class AuthService {
 
       console.log('✅ [AUTH] Access token renovado para:', user.username);
 
-      return {
-        success: true,
-        message: 'Token refreshed successfully',
-        accessToken
-      };
+      return { success: true, message: 'Token refreshed successfully', accessToken };
+
     } catch (error: any) {
       console.error('❌ [AUTH] Error renovando token:', error.message);
-      return {
-        success: false,
-        message: 'Invalid or expired refresh token'
-      };
+      return { success: false, message: 'Invalid or expired refresh token' };
     }
   }
 
   // ==================== VERIFICACIÓN ====================
 
-  /**
-   * Verificar token JWT (mantener compatibilidad con código actual)
-   */
   verifyToken(token: string): UserData | null {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as DecodedAccessToken;
-      
-      if (decoded.type !== 'access') {
-        return null;
-      }
-
+      if (decoded.type !== 'access') return null;
       return {
-        id: decoded.id,
-        username: decoded.username,
-        email: decoded.email
+        id:          decoded.id,
+        username:    decoded.username,
+        email:       decoded.email,
+        permissions: decoded.permissions ?? [],  // ← incluido
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
 
   /**
-   * Obtener información de cuenta (mantener compatibilidad)
+   * Obtener cuenta + permisos (usado por GET /api/auth/me)
    */
   async getAccount(accountId: number): Promise<UserData | null> {
     try {
@@ -506,12 +450,15 @@ class AuthService {
         'SELECT id, username, email, joindate FROM account WHERE id = ?',
         [accountId]
       );
+      if (accounts.length === 0) return null;
 
-      if (accounts.length === 0) {
-        return null;
-      }
+      // NUEVO: incluir permisos frescos en /me
+      const permissions = await this.getUserPermissions(accountId);
 
-      return accounts[0] as UserData;
+      return {
+        ...(accounts[0] as UserData),
+        permissions,
+      };
     } catch (error) {
       console.error('❌ [AUTH] Error obteniendo cuenta:', error);
       return null;
@@ -520,9 +467,6 @@ class AuthService {
 
   // ==================== ANTI BRUTE-FORCE ====================
 
-  /**
-   * Logging de intentos fallidos
-   */
   async logFailedAttempt(ipAddress: string, username: string): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
@@ -535,9 +479,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Obtener intentos fallidos recientes
-   */
   async getRecentFailedAttempts(ipAddress: string, username: string): Promise<number> {
     try {
       const [attempts] = await authDB.query<RowDataPacket[]>(
@@ -554,9 +495,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Limpiar intentos fallidos antiguos
-   */
   async clearFailedAttempts(ipAddress: string, username: string): Promise<void> {
     try {
       await authDB.query<ResultSetHeader>(
@@ -570,12 +508,9 @@ class AuthService {
     }
   }
 
-  /**
-   * Log de login exitoso (auditoría)
-   */
   async logSuccessfulLogin(
-    userId: number, 
-    ipAddress: string, 
+    userId: number,
+    ipAddress: string,
     userAgent: string | null = null
   ): Promise<void> {
     try {
@@ -591,24 +526,17 @@ class AuthService {
 
   // ==================== LOGOUT ====================
 
-  /**
-   * Logout (revocar refresh token específico)
-   */
   async logout(refreshToken: string): Promise<ServiceResponse> {
     try {
       const decoded = jwt.decode(refreshToken) as DecodedRefreshToken | null;
-      
       if (!decoded || !decoded.tokenId) {
         return { success: false, message: 'Invalid token' };
       }
-
       await authDB.query<ResultSetHeader>(
         `UPDATE refresh_tokens SET revoked = 1 WHERE token_id = ?`,
         [decoded.tokenId]
       );
-
       console.log('✅ [AUTH] Logout exitoso, token revocado');
-
       return { success: true, message: 'Logged out successfully' };
     } catch (error) {
       console.error('❌ [AUTH] Error en logout:', error);
@@ -616,9 +544,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Logout global (revocar todos los tokens del usuario)
-   */
   async logoutAll(userId: number): Promise<ServiceResponse> {
     try {
       await this.revokeAllUserTokens(userId);

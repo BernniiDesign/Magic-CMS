@@ -4,24 +4,32 @@ import { useEffect } from 'react';
 
 interface ItemTooltipProps {
   itemId: number;
+  type?: 'item' | 'spell' | 'enchantment';  // ← NUEVO: tipo de tooltip
+  
+  // Props específicas para items equipados (solo cuando type='item')
   enchantItemId?: number;
   gemItemIds?: number[];
   prismaticItemId?: number;
   randomProperty?: number;
+  
   children?: React.ReactNode;
   className?: string;
 }
 
 /**
  * ✅ COMPONENTE FINAL - USA ITEM IDS RESUELTOS
+ * Soporta items, spells y enchantments de WotLKDB
  */
 export function ItemTooltip({ 
-  itemId, 
+  itemId,
+  type = 'item',  // ← por defecto es item
   enchantItemId, 
   gemItemIds = [],
   prismaticItemId,
   randomProperty,
-  children}: ItemTooltipProps) {
+  children,
+  className
+}: ItemTooltipProps) {
   
   useEffect(() => {
     // Inyectar script de WotLKDB
@@ -40,26 +48,36 @@ export function ItemTooltip({
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [itemId, enchantItemId, gemItemIds, prismaticItemId, randomProperty]);
+  }, [itemId, type, enchantItemId, gemItemIds, prismaticItemId, randomProperty]);
 
   /**
    * ✅ CONSTRUCCIÓN DE URL CORRECTA
+   * Soporta:
+   *   - ?item=12345
+   *   - ?spell=48441
+   *   - ?enchantment=3539
    */
   const buildURL = (): string => {
+    // Para spell y enchantment, URL simple
+    if (type === 'spell') {
+      return `https://wotlkdb.com/?spell=${itemId}`;
+    }
+    if (type === 'enchantment') {
+      return `https://wotlkdb.com/?enchantment=${itemId}`;
+    }
+
+    // Para items, soporta mods (enchant, gems, etc)
     const params: string[] = [`item=${itemId}`];
     
-    // Enchant permanente
     if (enchantItemId) {
       params.push(`ench=${enchantItemId}`);
     }
     
-    // Gemas (filtrar nulls)
     const validGems = gemItemIds.filter(id => id > 0);
     if (validGems.length > 0) {
       params.push(`gems=${validGems.join(':')}`);
     }
     
-    // Prismatic gem
     if (prismaticItemId) {
       params.push(`prismatic=${prismaticItemId}`);
     }
@@ -71,10 +89,20 @@ export function ItemTooltip({
     return `https://wotlkdb.com/?${params.join('&')}`;
   };
 
+  /**
+   * data-wowhead attribute para activar el tooltip
+   */
+  const getDataAttr = (): string => {
+    if (type === 'spell') return `spell=${itemId}`;
+    if (type === 'enchantment') return `enchantment=${itemId}`;
+    return `item=${itemId}`;
+  };
+
   return (
     <a 
       href={buildURL()}
-      data-wowhead={`item=${itemId}`}
+      data-wowhead={getDataAttr()}
+      className={className}
       rel="noopener noreferrer"
     >
       {children}

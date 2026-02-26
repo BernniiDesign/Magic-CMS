@@ -3,10 +3,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+// permissions: array de permissionIds de rbac_account_permissions
+// permissionId = 3 → admin (puede crear news y devblog)
 interface User {
   id: number;
   username: string;
   email: string;
+  permissions: number[];
 }
 
 interface AuthState {
@@ -14,8 +17,7 @@ interface AuthState {
   accessToken: string | null;
   isAuthenticated: boolean;
   isRefreshing: boolean;
-  
-  // Actions
+
   setAuth: (user: User, accessToken: string) => void;
   updateAccessToken: (accessToken: string) => void;
   logout: () => void;
@@ -31,16 +33,12 @@ export const useAuthStore = create<AuthState>()(
       isRefreshing: false,
 
       setAuth: (user, accessToken) => {
-        console.log('🔐 [AUTH STORE] Guardando autenticación:', { 
-          user, 
-          tokenLength: accessToken.length 
-        });
-        
-        set({
+        console.log('🔐 [AUTH STORE] Guardando autenticación:', {
           user,
-          accessToken,
-          isAuthenticated: true,
+          permissions: user.permissions,
+          tokenLength: accessToken.length,
         });
+        set({ user, accessToken, isAuthenticated: true });
       },
 
       updateAccessToken: (accessToken) => {
@@ -48,24 +46,18 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken });
       },
 
-      setRefreshing: (isRefreshing) => {
-        set({ isRefreshing });
-      },
+      setRefreshing: (isRefreshing) => set({ isRefreshing }),
 
       logout: () => {
         console.log('🚪 [AUTH STORE] Cerrando sesión');
-        set({
-          user: null,
-          accessToken: null,
-          isAuthenticated: false,
-        });
+        set({ user: null, accessToken: null, isAuthenticated: false });
       },
     }),
     {
       name: 'auth-storage',
       partialize: (state) => ({
-        user: state.user,
-        accessToken: state.accessToken,
+        user:            state.user,
+        accessToken:     state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }

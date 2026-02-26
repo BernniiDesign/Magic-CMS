@@ -1,6 +1,6 @@
 // backend/src/services/community.service.ts
 // DB: cms → foros, noticias, devblog
-// author_name desnormalizado: evita JOINs cross-DB con auth
+// author_name NO se inserta (columna no existe) — solo author_id
 
 import { cmsDB } from '../config/database';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
@@ -81,23 +81,23 @@ class CommunityService {
 
   async createThread(data: {
     categoryId: number; title: string; content: string;
-    authorId: number; authorName: string;
+    authorId: number; authorName: string;  // ← authorName en el tipo pero NO se inserta
   }) {
     const [result] = await cmsDB.execute<ResultSetHeader>(`
-      INSERT INTO forum_threads (category_id, author_id, author_name, title, content)
-      VALUES (?, ?, ?, ?, ?)
-    `, [data.categoryId, data.authorId, data.authorName, data.title, data.content]);
+      INSERT INTO forum_threads (category_id, author_id, title, content)
+      VALUES (?, ?, ?, ?)
+    `, [data.categoryId, data.authorId, data.title, data.content]);
     return { id: result.insertId, ...data };
   }
 
   async createReply(data: {
     threadId: number; content: string;
-    authorId: number; authorName: string;
+    authorId: number; authorName: string;  // ← authorName en el tipo pero NO se inserta
   }) {
     const [result] = await cmsDB.execute<ResultSetHeader>(`
-      INSERT INTO forum_replies (thread_id, author_id, author_name, content)
-      VALUES (?, ?, ?, ?)
-    `, [data.threadId, data.authorId, data.authorName, data.content]);
+      INSERT INTO forum_replies (thread_id, author_id, content)
+      VALUES (?, ?, ?)
+    `, [data.threadId, data.authorId, data.content]);
 
     await cmsDB.execute(`
       UPDATE forum_threads
@@ -135,13 +135,13 @@ class CommunityService {
 
   async createNews(data: {
     title: string; content: string; summary: string;
-    tags: string; authorId: number; authorName: string;
+    tags: string; authorId: number; authorName: string;  // ← authorName NO se inserta
   }) {
     const slug = slugify(data.title);
     const [result] = await cmsDB.execute<ResultSetHeader>(`
-      INSERT INTO news (author_id, author_name, title, slug, summary, content, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [data.authorId, data.authorName, data.title, slug, data.summary || '', data.content, data.tags || '']);
+      INSERT INTO news (author_id, title, slug, summary, content, tags)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [data.authorId, data.title, slug, data.summary || '', data.content, data.tags || '']);
     return { id: result.insertId, slug, ...data };
   }
 
@@ -172,13 +172,13 @@ class CommunityService {
 
   async createDevBlogPost(data: {
     title: string; content: string; summary: string;
-    tags: string; authorId: number; authorName: string;
+    tags: string; authorId: number; authorName: string;  // ← authorName NO se inserta
   }) {
     const slug = slugify(data.title);
     const [result] = await cmsDB.execute<ResultSetHeader>(`
-      INSERT INTO devblog (author_id, author_name, title, slug, summary, content, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [data.authorId, data.authorName, data.title, slug, data.summary || '', data.content, data.tags || '']);
+      INSERT INTO devblog (author_id, title, slug, summary, content, tags)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [data.authorId, data.title, slug, data.summary || '', data.content, data.tags || '']);
     return { id: result.insertId, slug, ...data };
   }
 }

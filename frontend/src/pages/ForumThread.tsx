@@ -13,41 +13,103 @@ import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
-// Regex para detectar [item=XXXX]Nombre[/item] en contenido de posts
+// Regex para detectar tags BBCode de WotLKDB
 const ITEM_TAG_REGEX = /\[item=(\d+)\]([^\[]*)\[\/item\]/g;
+const ENCHANT_TAG_REGEX = /\[enchant=(\d+)\]([^\[]*)\[\/enchant\]/g;
+const SPELL_TAG_REGEX = /\[spell=(\d+)\]([^\[]*)\[\/spell\]/g;
 
-/** Renderiza texto con [item=XXXX] convertidos a tooltips de WotLKDB */
+/** 
+ * Renderiza texto con [item=X], [enchant=X], [spell=X] convertidos a tooltips.
+ * Ejemplo de uso en posts:
+ *   [item=40395]Torch of Holy Fire[/item]
+ *   [enchant=3539]Berserking[/enchant]
+ *   [spell=48441]Rejuvenation[/spell]
+ */
 function RichContent({ content }: { content: string }) {
+  const allMatches: Array<{ index: number; length: number; element: React.ReactNode }> = [];
+
+  // Buscar todos los [item=X]
+  let match: RegExpExecArray | null;
+  const itemRegex = new RegExp(ITEM_TAG_REGEX.source, 'g');
+  while ((match = itemRegex.exec(content)) !== null) {
+    const itemId = parseInt(match[1], 10);
+    const itemName = match[2] || `Item ${itemId}`;
+    allMatches.push({
+      index: match.index,
+      length: match[0].length,
+      element: (
+        <ItemTooltip
+          key={`item-${match.index}`}
+          itemId={itemId}
+          type="item"
+          className="text-blue-400 hover:text-wow-ice cursor-pointer underline decoration-dotted"
+        >
+          {itemName}
+        </ItemTooltip>
+      )
+    });
+  }
+
+  // Buscar todos los [enchant=X]
+  const enchantRegex = new RegExp(ENCHANT_TAG_REGEX.source, 'g');
+  while ((match = enchantRegex.exec(content)) !== null) {
+    const enchantId = parseInt(match[1], 10);
+    const enchantName = match[2] || `Enchant ${enchantId}`;
+    allMatches.push({
+      index: match.index,
+      length: match[0].length,
+      element: (
+        <ItemTooltip
+          key={`enchant-${match.index}`}
+          itemId={enchantId}
+          type="enchantment"
+          className="text-purple-400 hover:text-purple-300 cursor-pointer underline decoration-dotted"
+        >
+          {enchantName}
+        </ItemTooltip>
+      )
+    });
+  }
+
+  // Buscar todos los [spell=X]
+  const spellRegex = new RegExp(SPELL_TAG_REGEX.source, 'g');
+  while ((match = spellRegex.exec(content)) !== null) {
+    const spellId = parseInt(match[1], 10);
+    const spellName = match[2] || `Spell ${spellId}`;
+    allMatches.push({
+      index: match.index,
+      length: match[0].length,
+      element: (
+        <ItemTooltip
+          key={`spell-${match.index}`}
+          itemId={spellId}
+          type="spell"
+          className="text-green-400 hover:text-green-300 cursor-pointer underline decoration-dotted"
+        >
+          {spellName}
+        </ItemTooltip>
+      )
+    });
+  }
+
+  // Ordenar matches por posición en el texto
+  allMatches.sort((a, b) => a.index - b.index);
+
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const regex = new RegExp(ITEM_TAG_REGEX.source, 'g');
-
-  while ((match = regex.exec(content)) !== null) {
+  
+  for (const match of allMatches) {
     // Texto antes del tag
     if (match.index > lastIndex) {
       parts.push(
-        <span key={lastIndex}>{content.slice(lastIndex, match.index)}</span>
+        <span key={`text-${lastIndex}`}>{content.slice(lastIndex, match.index)}</span>
       );
     }
-
-    const itemId = parseInt(match[1], 10);
-    const itemName = match[2] || `Item ${itemId}`;
-
-    // Tooltip WotLKDB
-    parts.push(
-      <ItemTooltip
-        key={match.index}
-        itemId={itemId}
-        className="inline text-blue-400 hover:text-wow-ice cursor-pointer underline decoration-dotted"
-      >
-        {itemName}
-      </ItemTooltip>
-    );
-
-    lastIndex = match.index + match[0].length;
+    parts.push(match.element);
+    lastIndex = match.index + match.length;
   }
 
+  // Texto final
   if (lastIndex < content.length) {
     parts.push(<span key="end">{content.slice(lastIndex)}</span>);
   }
@@ -62,7 +124,7 @@ function RichContent({ content }: { content: string }) {
 export default function ForumThread() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [data, setData]         = useState<any>(null);
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
@@ -154,7 +216,7 @@ export default function ForumThread() {
 
                 {/* Contenido del hilo */}
                 <div className="flex gap-0">
-                  <UserPanel author={data.thread.author_name} />
+                  <UserPanel author={data.thread.author_id} />
                   <div className="flex-1 p-5 border-l border-dark-700/40">
                     <RichContent content={data.thread.content} />
                     <div className="mt-4 text-xs text-gray-600 flex items-center gap-1">
@@ -175,7 +237,7 @@ export default function ForumThread() {
                   className="bg-dark-800/40 rounded-xl border border-dark-700/60 overflow-hidden"
                 >
                   <div className="flex">
-                    <UserPanel author={r.author_name} small />
+                    <UserPanel author={r.author_id} small />
                     <div className="flex-1 p-5 border-l border-dark-700/40">
                       <RichContent content={r.content} />
                       <div className="mt-4 text-xs text-gray-600 flex items-center gap-1">
@@ -217,8 +279,21 @@ export default function ForumThread() {
                     <FaReply className="text-wow-gold" /> Tu Respuesta
                   </h3>
 
-                  <div className="mb-2 text-xs text-gray-600">
-                    Tip: usa <code className="bg-dark-900 px-1 rounded">[item=12345]Nombre del Item[/item]</code> para mostrar tooltips
+                  <div className="mb-2 text-xs text-gray-600 space-y-1">
+                    <div>
+                      Tip: usa BBCode para tooltips de WotLKDB:
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[10px]">
+                      <code className="bg-dark-900 px-1.5 py-0.5 rounded text-blue-400">
+                        [item=40395]Torch of Holy Fire[/item]
+                      </code>
+                      <code className="bg-dark-900 px-1.5 py-0.5 rounded text-purple-400">
+                        [enchant=3539]Berserking[/enchant]
+                      </code>
+                      <code className="bg-dark-900 px-1.5 py-0.5 rounded text-green-400">
+                        [spell=48441]Rejuvenation[/spell]
+                      </code>
+                    </div>
                   </div>
 
                   <textarea
@@ -260,13 +335,13 @@ export default function ForumThread() {
   );
 }
 
-function UserPanel({ author, small }: { author: string; small?: boolean }) {
+function UserPanel({ author, small }: { author: number; small?: boolean }) {
   return (
     <div className={`${small ? 'w-24' : 'w-28'} shrink-0 bg-dark-900/40 p-4 flex flex-col items-center gap-2 text-center`}>
       <div className={`${small ? 'w-10 h-10' : 'w-12 h-12'} bg-gradient-to-br from-wow-gold to-yellow-600 rounded-full flex items-center justify-center`}>
         <FaUser className={`${small ? 'text-sm' : 'text-base'} text-dark-900`} />
       </div>
-      <span className="text-xs font-semibold text-gray-300 break-all">{author}</span>
+      <span className="text-xs font-semibold text-gray-300 break-all">Usuario #{author}</span>
     </div>
   );
 }

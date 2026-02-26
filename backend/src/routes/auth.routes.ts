@@ -24,67 +24,48 @@ const registerValidation = [
     .trim()
     .isEmail()
     .withMessage('Must be a valid email address')
-    .normalizeEmail()
+    .normalizeEmail(),
 ];
 
 const loginValidation = [
-  body('username')
-    .trim()
-    .notEmpty()
-    .withMessage('Username is required'),
-  body('password')
-    .notEmpty()
-    .withMessage('Password is required')
-];
-
-const refreshTokenValidation = [
-  body('refreshToken')
-    .notEmpty()
-    .withMessage('Refresh token is required')
+  body('username').trim().notEmpty().withMessage('Username is required'),
+  body('password').notEmpty().withMessage('Password is required'),
 ];
 
 // ==================== ROUTES ====================
 
 /**
  * @route   POST /api/auth/register
- * @desc    Register a new account
  * @access  Public
  */
 router.post('/register', validate(registerValidation), async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password, email } = req.body;
-
     const result = await authService.register({ username, password, email });
 
     if (!result.success) {
       res.status(400).json(result);
       return;
     }
-
     res.status(201).json(result);
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Register error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
 /**
  * @route   POST /api/auth/login
- * @desc    Login to account
  * @access  Public
  */
 router.post('/login', validate(loginValidation), async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password } = req.body;
-    
-    // Obtener IP real (considerando reverse proxy)
-    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() 
-                      || req.headers['x-real-ip'] as string
-                      || req.socket.remoteAddress 
-                      || 'unknown';
+
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim()
+      || req.headers['x-real-ip'] as string
+      || req.socket.remoteAddress
+      || 'unknown';
 
     const userAgent = req.headers['user-agent'] || 'unknown';
 
@@ -97,52 +78,44 @@ router.post('/login', validate(loginValidation), async (req: Request, res: Respo
       return;
     }
 
-    // Configurar refresh token en httpOnly cookie (seguro)
+    // Refresh token en httpOnly cookie
     res.cookie('refreshToken', result.refreshToken, {
-      httpOnly: true,      // No accesible desde JavaScript
-      secure: process.env.NODE_ENV === 'production', // Solo HTTPS en producción
-      sameSite: 'strict',  // Protección CSRF
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
-      path: '/api/auth'    // Solo disponible en rutas de auth
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge:   7 * 24 * 60 * 60 * 1000,
+      path:     '/api/auth',
     });
 
-    // Retornar solo access token (refresh token va en cookie)
+    // CAMBIO: result.user ahora incluye permissions (viene de auth.service)
     res.status(200).json({
-      success: true,
-      message: result.message,
-      token: result.accessToken, // Compatibilidad backward
+      success:     true,
+      message:     result.message,
+      token:       result.accessToken,   // legacy
       accessToken: result.accessToken,
-      user: result.user
+      user:        result.user,          // { id, username, email, permissions[] }
     });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
 /**
  * @route   POST /api/auth/refresh
- * @desc    Refresh access token using refresh token
- * @access  Public (requires valid refresh token in cookie or body)
+ * @access  Public (requiere refreshToken en cookie)
  */
 router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   try {
-    // CRÍTICO: Obtener de cookie primero
     const refreshToken = req.cookies?.refreshToken;
 
     console.log('🔄 [AUTH] Refresh attempt:', {
       hasCookie: !!req.cookies?.refreshToken,
-      cookies: Object.keys(req.cookies || {})
+      cookies:   Object.keys(req.cookies || {}),
     });
 
     if (!refreshToken) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Refresh token not provided' 
-      });
+      res.status(401).json({ success: false, message: 'Refresh token not provided' });
       return;
     }
 
@@ -155,21 +128,17 @@ router.post('/refresh', async (req: Request, res: Response): Promise<void> => {
     }
 
     res.status(200).json({
-      success: true,
+      success:     true,
       accessToken: result.accessToken,
     });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Refresh error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
 /**
  * @route   POST /api/auth/logout
- * @desc    Logout (revoke refresh token)
  * @access  Private
  */
 router.post('/logout', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
@@ -180,90 +149,69 @@ router.post('/logout', authenticateToken, async (req: AuthRequest, res: Response
       await authService.logout(refreshToken);
     }
 
-    // Limpiar cookie
     res.clearCookie('refreshToken', { path: '/api/auth' });
-
-    res.status(200).json({ 
-      success: true, 
-      message: 'Logged out successfully' 
-    });
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Logout error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
 /**
  * @route   POST /api/auth/logout-all
- * @desc    Logout from all devices (revoke all refresh tokens)
  * @access  Private
  */
 router.post('/logout-all', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Not authenticated' 
-      });
+      res.status(401).json({ success: false, message: 'Not authenticated' });
       return;
     }
 
     await authService.logoutAll(req.user.id);
-
-    // Limpiar cookie
     res.clearCookie('refreshToken', { path: '/api/auth' });
-
-    res.status(200).json({ 
-      success: true, 
-      message: 'Logged out from all devices' 
-    });
+    res.status(200).json({ success: true, message: 'Logged out from all devices' });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Logout all error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
 /**
  * @route   GET /api/auth/me
- * @desc    Get current user information
  * @access  Private
+ *
+ * CAMBIO: ahora devuelve { user: { id, username, email, permissions[] } }
+ * en lugar de { account: {...} } — el frontend espera `user`, no `account`.
+ * Los permissions se consultan frescos desde rbac_account_permissions.
  */
 router.get('/me', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     if (!req.user) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Not authenticated' 
-      });
+      res.status(401).json({ success: false, message: 'Not authenticated' });
       return;
     }
 
+    // getAccount ahora incluye permissions (ver auth.service.ts)
     const account = await authService.getAccount(req.user.id);
 
     if (!account) {
-      res.status(404).json({ 
-        success: false, 
-        message: 'Account not found' 
-      });
+      res.status(404).json({ success: false, message: 'Account not found' });
       return;
     }
 
-    res.status(200).json({ 
-      success: true, 
-      account 
+    res.status(200).json({
+      success: true,
+      user: {                         // ← clave `user` (no `account`)
+        id:          account.id,
+        username:    account.username,
+        email:       account.email,
+        permissions: account.permissions ?? [],
+      },
     });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Get me error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -277,33 +225,22 @@ router.post('/verify', async (req: Request, res: Response): Promise<void> => {
     const { token } = req.body;
 
     if (!token) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'Token is required' 
-      });
+      res.status(400).json({ success: false, message: 'Token is required' });
       return;
     }
 
     const decoded = authService.verifyToken(token);
 
     if (!decoded) {
-      res.status(401).json({ 
-        success: false, 
-        message: 'Invalid token' 
-      });
+      res.status(401).json({ success: false, message: 'Invalid token' });
       return;
     }
 
-    res.status(200).json({ 
-      success: true, 
-      user: decoded 
-    });
+    // CAMBIO: decoded ahora incluye permissions
+    res.status(200).json({ success: true, user: decoded });
   } catch (error) {
     console.error('❌ [AUTH ROUTES] Verify error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error' 
-    });
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
